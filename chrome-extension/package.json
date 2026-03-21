@@ -1,0 +1,26 @@
+{
+  "name": "fitcheck-chrome-extension",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "generate-icons": "node scripts/generate-icons.mjs",
+    "build": "npm run generate-icons && vite build",
+    "check": "tsc --noEmit"
+  },
+  "keywords": [
+    "fitcheck",
+    "chrome-extension",
+    "myntra",
+    "ajio"
+  ],
+  "license": "ISC",
+  "description": "FitCheck browser extension for Myntra and Ajio product pages",
+  "devDependencies": {
+    "@types/chrome": "^0.1.38",
+    "sharp": "^0.34.5",
+    "typescript": "^5.9.3",
+    "vite": "^8.0.1",
+    "vite-plugin-static-copy": "^3.3.0"
+  }
+}

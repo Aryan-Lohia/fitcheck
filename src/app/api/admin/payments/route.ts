@@ -1,0 +1,1 @@
+import { requireRole } from "@/lib/auth/rbac"; import { prisma } from "@/lib/prisma/client"; import { ok } from "@/lib/http"; export async function GET(){ const s=await requireRole(["ADMIN"]); if("status" in s) return s; const payments=await prisma.payment.findMany({take:200,orderBy:{createdAt:"desc"}}); return ok({payments}); }

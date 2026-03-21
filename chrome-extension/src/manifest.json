@@ -1,0 +1,27 @@
+{
+  "manifest_version": 3,
+  "name": "FitCheck for Myntra & Ajio",
+  "version": "1.0.0",
+  "description": "Run Fit Check from a Myntra or Ajio product page and open FitCheck to import the item.",
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://www.myntra.com/*",
+        "https://www.ajio.com/*"
+      ],
+      "js": [
+        "content.js"
+      ],
+      "run_at": "document_idle"
+    }
+  ],
+  "host_permissions": [
+    "https://www.myntra.com/*",
+    "https://www.ajio.com/*"
+  ]
+}

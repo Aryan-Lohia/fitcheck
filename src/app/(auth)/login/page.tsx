@@ -1,0 +1,128 @@
+"use client";
+
+import { Suspense } from "react";
+import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import Link from "next/link";
+import { useRouter, useSearchParams } from "next/navigation";
+import { z } from "zod";
+import { AuthSplitShell } from "@/components/auth/AuthSplitShell";
+import { safeInternalNextPath } from "@/lib/auth/safe-next-path";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { loginSchema } from "@/lib/validators/auth";
+
+function LoginForm() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const nextRaw = searchParams.get("next");
+  const safeNext = safeInternalNextPath(nextRaw);
+  const {
+    register,
+    handleSubmit,
+    formState: { errors, isSubmitting },
+  } = useForm<z.infer<typeof loginSchema>>({
+    resolver: zodResolver(loginSchema),
+  });
+
+  const onSubmit = async (values: z.infer<typeof loginSchema>) => {
+    const res = await fetch("/api/auth/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(values),
+    });
+    if (res.ok) {
+      const d = await res.json();
+      const role = d.user?.role;
+      if (safeNext) {
+        router.push(safeNext);
+        return;
+      }
+      router.push(
+        role === "ADMIN"
+          ? "/admin"
+          : role === "FREELANCE_USER"
+            ? "/freelancer/dashboard"
+            : "/dashboard",
+      );
+    }
+  };
+
+  return (
+    <AuthSplitShell
+      eyebrow="Welcome back"
+      title="Log in"
+      description="Sign in to FitCheck with your email and password."
+      footer={
+        <p className="text-center text-sm text-text-muted">
+          New here?{" "}
+          <Link
+            href={
+              safeNext
+                ? `/signup?next=${encodeURIComponent(safeNext)}`
+                : "/signup"
+            }
+            className="font-semibold text-brand-blue underline-offset-2 hover:underline"
+          >
+            Create an account
+          </Link>
+        </p>
+      }
+    >
+      <form
+        className="space-y-5 rounded-2xl border border-border-subtle bg-surface p-6 shadow-sm sm:p-7"
+        onSubmit={handleSubmit(onSubmit)}
+        noValidate
+      >
+        <div>
+          <Label htmlFor="login-email">Email</Label>
+          <Input
+            id="login-email"
+            type="email"
+            autoComplete="email"
+            className="mt-1.5"
+            {...register("email")}
+          />
+          {errors.email?.message ? (
+            <p className="mt-1 text-xs text-brand-primary" role="alert">
+              {errors.email.message}
+            </p>
+          ) : null}
+        </div>
+        <div>
+          <Label htmlFor="login-password">Password</Label>
+          <Input
+            id="login-password"
+            type="password"
+            autoComplete="current-password"
+            className="mt-1.5"
+            {...register("password")}
+          />
+          {errors.password?.message ? (
+            <p className="mt-1 text-xs text-brand-primary" role="alert">
+              {errors.password.message}
+            </p>
+          ) : null}
+        </div>
+        <Button type="submit" disabled={isSubmitting} className="w-full min-h-11">
+          {isSubmitting ? "Signing in…" : "Sign in"}
+        </Button>
+      </form>
+    </AuthSplitShell>
+  );
+}
+
+export default function LoginPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="flex min-h-[50vh] items-center justify-center">
+          <div className="h-8 w-8 animate-spin rounded-full border-2 border-brand-blue border-t-transparent" />
+        </div>
+      }
+    >
+      <LoginForm />
+    </Suspense>
+  );
+}

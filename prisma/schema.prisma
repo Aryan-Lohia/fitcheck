@@ -1,0 +1,251 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  USER
+  FREELANCE_USER
+  ADMIN
+}
+
+enum UserStatus {
+  ACTIVE
+  SUSPENDED
+  DELETED
+}
+
+enum FreelancerVerificationStatus {
+  draft
+  submitted
+  under_review
+  needs_more_info
+  approved
+  rejected
+  suspended
+}
+
+enum BookingStatus {
+  draft
+  requested
+  accepted
+  meeting_link_sent
+  in_progress
+  completed
+  cancelled
+  refunded
+}
+
+enum PaymentStatus {
+  pending
+  authorized
+  captured
+  failed
+  refunded
+  disputed
+}
+
+model User {
+  id            String             @id @default(cuid())
+  name          String
+  email         String             @unique
+  passwordHash  String
+  role          UserRole           @default(USER)
+  status        UserStatus         @default(ACTIVE)
+  createdAt     DateTime           @default(now())
+  updatedAt     DateTime           @updatedAt
+  profile       UserProfile?
+  media         UserMedia[]
+  imports       ProductImport[]
+  chatSessions  ChatSession[]
+  freelancer    FreelancerProfile?
+  bookings      BookingRequest[]   @relation("userBookings")
+  apiUsage      ApiUsageDaily[]
+  storageUsage  StorageUsageDaily[]
+  trials        Trial[]
+  auditActions  AuditLog[]         @relation("auditActor")
+}
+
+model UserProfile {
+  id                 String   @id @default(cuid())
+  userId             String   @unique
+  gender             String?
+  skinTone           String?
+  preferredStyle     Json?
+  preferredFit       String?
+  preferredColors    Json?
+  measurementsJson   Json?
+  profileCompletion  Int      @default(0)
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+  user               User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model UserMedia {
+  id         String   @id @default(cuid())
+  userId     String
+  s3Key      String
+  fileName   String
+  mimeType   String
+  fileSize   BigInt
+  category   String
+  isDeleted  Boolean  @default(false)
+  createdAt  DateTime @default(now())
+  deletedAt  DateTime?
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, isDeleted])
+}
+
+model ProductImport {
+  id            String   @id @default(cuid())
+  userId         String
+  sourceUrl      String
+  domainType     String
+  title          String?
+  brand          String?
+  price          String?
+  rawHtmlHash    String?
+  normalizedJson Json?
+  fitSummaryJson Json?
+  parserVersion  String   @default("v1")
+  createdAt      DateTime @default(now())
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  images         ProductImage[]
+}
+
+model ProductImage {
+  id              String   @id @default(cuid())
+  productImportId String
+  imageUrl         String
+  sourceType       String
+  s3Key            String?
+  productImport    ProductImport @relation(fields: [productImportId], references: [id], onDelete: Cascade)
+}
+
+model ChatSession {
+  id         String   @id @default(cuid())
+  userId      String
+  title       String
+  mode        String  @default("fashion")
+  createdAt   DateTime @default(now())
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  messages    ChatMessage[]
+}
+
+model ChatMessage {
+  id              String   @id @default(cuid())
+  sessionId       String
+  senderType      String
+  contentText     String?
+  contentJson     Json?
+  attachmentsJson Json?
+  createdAt       DateTime @default(now())
+  session         ChatSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+}
+
+model FreelancerProfile {
+  id                  String   @id @default(cuid())
+  userId               String   @unique
+  bio                  String?
+  portfolioLinksJson   Json?
+  pastWorkLinksJson    Json?
+  expertiseTagsJson    Json?
+  verificationStatus   FreelancerVerificationStatus @default(draft)
+  verificationNotes    String?
+  approvedAt           DateTime?
+  user                 User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  bookingRequests      BookingRequest[] @relation("freelancerBookings")
+  bookingSlots         BookingSlot[]
+}
+
+model BookingRequest {
+  id              String   @id @default(cuid())
+  userId          String
+  freelancerId    String?
+  status          BookingStatus @default(requested)
+  topic           String
+  notes           String?
+  preferredTime   DateTime?
+  durationMinutes Int @default(30)
+  meetingLink     String?
+  paymentStatus   PaymentStatus @default(pending)
+  createdAt       DateTime @default(now())
+  acceptedAt      DateTime?
+  completedAt     DateTime?
+  user            User @relation("userBookings", fields: [userId], references: [id], onDelete: Cascade)
+  freelancer      FreelancerProfile? @relation("freelancerBookings", fields: [freelancerId], references: [id])
+  payments        Payment[]
+}
+
+model BookingSlot {
+  id           String   @id @default(cuid())
+  freelancerId String
+  startAt      DateTime
+  endAt        DateTime
+  isBooked     Boolean @default(false)
+  timezone     String
+  freelancer   FreelancerProfile @relation(fields: [freelancerId], references: [id], onDelete: Cascade)
+}
+
+model ApiUsageDaily {
+  id                String   @id @default(cuid())
+  userId            String
+  date              DateTime
+  geminiRequests    Int      @default(0)
+  geminiTokensIn    Int      @default(0)
+  geminiTokensOut   Int      @default(0)
+  imageAnalysisCount Int     @default(0)
+  estimatedCost     Float    @default(0)
+  user              User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, date])
+}
+
+model StorageUsageDaily {
+  id         String   @id @default(cuid())
+  userId      String
+  date        DateTime
+  bytesUsed   BigInt
+  fileCount   Int
+  user        User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, date])
+}
+
+model Trial {
+  id          String   @id @default(cuid())
+  userId      String
+  startAt     DateTime
+  endAt       DateTime
+  status      String
+  proEnabled  Boolean  @default(false)
+  user        User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model Payment {
+  id          String   @id @default(cuid())
+  bookingId   String
+  provider    String
+  amount      Int
+  currency    String   @default("INR")
+  status      PaymentStatus @default(pending)
+  providerRef String?
+  createdAt   DateTime @default(now())
+  booking     BookingRequest @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+}
+
+model AuditLog {
+  id          String   @id @default(cuid())
+  actorUserId String?
+  action      String
+  entityType  String
+  entityId    String
+  payloadJson Json?
+  createdAt   DateTime @default(now())
+  actor       User? @relation("auditActor", fields: [actorUserId], references: [id])
+}
