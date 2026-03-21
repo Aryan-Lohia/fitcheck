@@ -1,5 +1,10 @@
+const path = require("path");
+
 /**
  * PM2 process file — production on a VPS or bare metal.
+ *
+ * Requires a production build (`.next/` with BUILD_ID). `.next` is gitignored;
+ * on the server run `npm run build` after deploy, or use `npm run pm2:start`.
  *
  * Usage:
  *   npm run build
@@ -14,11 +19,11 @@ module.exports = {
     {
       name: "fitcheck",
       cwd: __dirname,
-      script: "node_modules/next/dist/bin/next",
-      args: "start",
+      script: path.join(__dirname, "scripts/pm2-next-start.cjs"),
       instances: 1,
       exec_mode: "fork",
       autorestart: true,
+      exp_backoff_restart_delay: 100,
       max_restarts: 10,
       min_uptime: "10s",
       max_memory_restart: "1G",
