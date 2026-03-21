@@ -3,8 +3,8 @@ const path = require("path");
 /**
  * PM2 process file — production on a VPS or bare metal.
  *
- * Requires a production build (`.next/` with BUILD_ID). `.next` is gitignored;
- * on the server run `npm run build` after deploy, or use `npm run pm2:start`.
+ * Next.js `output: "standalone"` — runs `node .next/standalone/server.js` (not `next start`).
+ * Requires `npm run build` first; `.next` is gitignored. Use `npm run pm2:start` after deploy.
  *
  * Usage:
  *   npm run build

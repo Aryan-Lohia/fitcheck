@@ -1,6 +1,7 @@
 /**
- * PM2 entry: fail fast with a clear message if `next build` was not run.
- * Keeps cwd aligned with the app root (same folder as `.next`).
+ * PM2 entry for Next.js with `output: "standalone"`.
+ * Uses `node .next/standalone/server.js` (required; `next start` is not supported for standalone).
+ * Copies `public` and `.next/static` into the standalone output on each start (Next.js requirement).
  */
 const fs = require("fs");
 const path = require("path");
@@ -8,6 +9,8 @@ const { spawn } = require("child_process");
 
 const root = path.join(__dirname, "..");
 const buildId = path.join(root, ".next", "BUILD_ID");
+const standaloneDir = path.join(root, ".next", "standalone");
+const serverJs = path.join(standaloneDir, "server.js");
 
 if (!fs.existsSync(buildId)) {
   console.error(
@@ -20,9 +23,33 @@ if (!fs.existsSync(buildId)) {
   process.exit(1);
 }
 
-const nextBin = require.resolve("next/dist/bin/next", { paths: [root] });
-const child = spawn(process.execPath, [nextBin, "start"], {
-  cwd: root,
+if (!fs.existsSync(serverJs)) {
+  console.error(
+    "[fitcheck] Missing .next/standalone/server.js. Your next.config must use output: \"standalone\" " +
+    "and you must run npm run build.\n"
+  );
+  process.exit(1);
+}
+
+function syncStandaloneAssets() {
+  const pubSrc = path.join(root, "public");
+  const pubDest = path.join(standaloneDir, "public");
+  const staticSrc = path.join(root, ".next", "static");
+  const staticDest = path.join(standaloneDir, ".next", "static");
+
+  if (fs.existsSync(pubSrc)) {
+    fs.cpSync(pubSrc, pubDest, { recursive: true, force: true });
+  }
+  if (fs.existsSync(staticSrc)) {
+    fs.mkdirSync(path.dirname(staticDest), { recursive: true });
+    fs.cpSync(staticSrc, staticDest, { recursive: true, force: true });
+  }
+}
+
+syncStandaloneAssets();
+
+const child = spawn(process.execPath, [serverJs], {
+  cwd: standaloneDir,
   stdio: "inherit",
   env: { ...process.env, NODE_ENV: "production" },
 });
