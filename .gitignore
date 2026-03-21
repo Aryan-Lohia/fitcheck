@@ -21,6 +21,7 @@
 /build
 
 # misc
+/logs
 .DS_Store
 *.pem
 
