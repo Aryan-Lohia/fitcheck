@@ -5,6 +5,11 @@ import { Providers } from "@/components/layout/providers";
 export const metadata: Metadata = {
   title: "FitCheck",
   description: "AI fashion platform",
+  icons: {
+    icon: [{ url: "/2.png", type: "image/png" }],
+    apple: [{ url: "/2.png", type: "image/png" }],
+    shortcut: "/2.png",
+  },
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

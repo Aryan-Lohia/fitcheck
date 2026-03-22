@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useState } from "react";
+import { BrandLogo } from "@/components/brand/brand-logo";
 import { cn } from "@/lib/utils";
 
 const nav = [
@@ -25,10 +26,10 @@ export function LandingHeader() {
       <div className="mx-auto flex max-w-6xl items-center justify-between gap-4 px-4 py-3 md:px-6">
         <a
           href="#top"
-          className="text-xl font-bold tracking-tight text-brand-accent"
+          className="inline-flex shrink-0 items-center rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring-focus focus-visible:ring-offset-2"
           onClick={() => setOpen(false)}
         >
-          FitCheck
+          <BrandLogo priority variant="lockup" />
         </a>
 
         <nav

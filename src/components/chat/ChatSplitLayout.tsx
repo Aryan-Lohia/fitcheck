@@ -4,6 +4,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { usePathname, useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import { api } from "@/hooks/use-api";
+import { BrandLogo } from "@/components/brand/brand-logo";
 import { Button } from "@/components/ui/button";
 import { decodeHtmlEntities } from "@/lib/text/decode-html-entities";
 import { cn } from "@/lib/utils";
@@ -122,9 +123,18 @@ export function ChatSplitLayout({ children }: { children: React.ReactNode }) {
             />
           </svg>
         </button>
-        <h1 className="min-w-0 flex-1 truncate text-base font-semibold text-text-primary">
-          {mobileTitle}
-        </h1>
+        <div className="flex min-w-0 flex-1 items-center gap-2">
+          {!activeSession ? (
+            <BrandLogo
+              variant="icon"
+              iconClassName="h-6 w-6"
+              className="pointer-events-none shrink-0"
+            />
+          ) : null}
+          <h1 className="min-w-0 flex-1 truncate text-base font-semibold text-text-primary">
+            {mobileTitle}
+          </h1>
+        </div>
         <Button
           type="button"
           onClick={() => createSession.mutate()}

@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { BrandLogoLink } from "@/components/brand/brand-logo";
 import { AppBarAuthActions } from "@/components/layout/app-bar-auth";
 import { USER_NAV_LINKS } from "@/components/layout/user-nav-config";
 import { cn } from "@/lib/utils";
@@ -12,12 +13,7 @@ export function AppHeader() {
   return (
     <header className="sticky top-0 z-40 border-b border-border-subtle bg-surface/95 shadow-sm backdrop-blur-md">
       <div className="mx-auto flex max-w-7xl items-center justify-between gap-3 px-4 py-3 md:gap-4 md:px-6">
-        <Link
-          href="/chat"
-          className="shrink-0 text-lg font-bold tracking-tight text-brand-accent"
-        >
-          FitCheck
-        </Link>
+        <BrandLogoLink href="/chat" priority variant="lockup" />
         <div className="flex min-w-0 items-center gap-2 md:gap-3">
           <nav
             className="hidden items-center gap-1 md:flex"

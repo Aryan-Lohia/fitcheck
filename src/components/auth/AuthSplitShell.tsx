@@ -1,4 +1,5 @@
 import { FashionHeroIllustration } from "@/components/auth/FashionHeroIllustration";
+import { BrandLogo } from "@/components/brand/brand-logo";
 import { cn } from "@/lib/utils";
 
 type AuthSplitShellProps = {
@@ -27,9 +28,7 @@ export function AuthSplitShell({
           )}
         >
           <header>
-            <p className="text-2xl font-bold tracking-tight text-brand-accent">
-              FitCheck
-            </p>
+            <BrandLogo variant="wordmark" wordmarkClassName="h-9 max-h-9" />
             <p className="mt-3 max-w-sm text-sm leading-relaxed text-text-muted">
               Your AI stylist for fit, sizing, and wardrobe decisions—bright,
               fast, and personal.
@@ -49,8 +48,8 @@ export function AuthSplitShell({
             <div className="mb-8 flex items-center gap-4 lg:hidden">
               <FashionHeroIllustration compact className="h-16 w-16 shrink-0" />
               <div>
-                <p className="text-lg font-bold text-brand-accent">FitCheck</p>
-                <p className="text-xs text-text-muted">AI fashion fit</p>
+                <BrandLogo variant="wordmark" />
+                <p className="mt-1 text-xs text-text-muted">AI fashion fit</p>
               </div>
             </div>
 

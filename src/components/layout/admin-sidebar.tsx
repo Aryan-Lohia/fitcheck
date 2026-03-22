@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState } from "react";
+import { BrandLogoLink } from "@/components/brand/brand-logo";
 import { cn } from "@/lib/utils";
 
 const links = [
@@ -64,6 +65,12 @@ export function AdminSidebar() {
         <div className="fixed inset-0 z-40 md:hidden">
           <div className="fixed inset-0 bg-black/30" onClick={() => setOpen(false)} aria-hidden />
           <aside className="fixed inset-y-0 left-0 z-50 w-64 bg-surface p-6 shadow-xl">
+            <BrandLogoLink
+              href="/admin"
+              className="mb-4"
+              variant="wordmark"
+              iconClassName="h-9 w-9"
+            />
             <h2 className="mb-6 text-lg font-bold text-brand-accent">Admin</h2>
             <nav className="space-y-1">{navLinks}</nav>
           </aside>
@@ -71,6 +78,12 @@ export function AdminSidebar() {
       )}
 
       <aside className="hidden w-64 shrink-0 border-r border-border-subtle bg-surface p-6 md:block">
+        <BrandLogoLink
+          href="/admin"
+          className="mb-4"
+          variant="icon"
+          iconClassName="h-9 w-9"
+        />
         <h2 className="mb-6 text-lg font-bold text-brand-accent">Admin</h2>
         <nav className="space-y-1">{navLinks}</nav>
       </aside>

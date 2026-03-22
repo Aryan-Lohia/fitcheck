@@ -2,7 +2,8 @@
 
 import { useRouter } from "next/navigation";
 import { useCallback, useState } from "react";
-import { IconSpark } from "@/components/marketing/landing-graphics";
+import Image from "next/image";
+import { BRAND_ICON_SRC, BrandLogo } from "@/components/brand/brand-logo";
 import { cn } from "@/lib/utils";
 
 const INTENT_CHIPS = [
@@ -45,11 +46,25 @@ export function LandingHeroZeroState() {
       </div>
 
       <div className="relative flex flex-1 flex-col items-center justify-center px-4 pb-0 pt-6 md:px-6 md:pt-10">
-        <div
-          className="mb-6 flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-br from-brand-blue/20 via-brand-accent/15 to-brand-warm/25 shadow-lg shadow-brand-blue/10 md:h-20 md:w-20"
-          aria-hidden
-        >
-          <IconSpark className="h-9 w-9 text-brand-blue md:h-11 md:w-11" />
+        <div className="mb-6 flex flex-col items-center gap-5">
+          <div
+            className="flex h-16 w-16 items-center justify-center rounded-2xl border border-border-subtle bg-black shadow-lg shadow-black/25 md:h-20 md:w-20"
+            aria-hidden
+          >
+            <Image
+              src={BRAND_ICON_SRC}
+              alt=""
+              width={160}
+              height={160}
+              className="h-11 w-11 object-contain md:h-14 md:w-14"
+              priority
+              sizes="(max-width: 768px) 44px, 56px"
+            />
+          </div>
+          <BrandLogo
+            variant="wordmark"
+            wordmarkClassName="h-8 max-h-8 sm:h-9 sm:max-h-9"
+          />
         </div>
 
         <h1

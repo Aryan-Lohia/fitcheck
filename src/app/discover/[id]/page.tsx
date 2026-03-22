@@ -1,6 +1,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { BrandLogoLink } from "@/components/brand/brand-logo";
 import { getFeaturedProductById } from "@/lib/landing/featured-products";
 
 type PageProps = { params: Promise<{ id: string }> };
@@ -26,12 +27,7 @@ export default async function DiscoverProductPage({ params }: PageProps) {
     <div className="min-h-screen bg-surface-muted text-text-primary">
       <header className="border-b border-border-subtle bg-surface/90 backdrop-blur-md">
         <div className="mx-auto flex max-w-lg items-center justify-between gap-3 px-4 py-3">
-          <Link
-            href="/"
-            className="text-lg font-bold tracking-tight text-brand-accent"
-          >
-            FitCheck
-          </Link>
+          <BrandLogoLink href="/" variant="lockup" />
           <Link
             href={loginPath}
             className="text-sm font-semibold text-brand-blue hover:underline"
