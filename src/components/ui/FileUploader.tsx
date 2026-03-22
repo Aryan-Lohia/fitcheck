@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useRef, useState } from "react";
+import { uploadUserMediaPhoto } from "@/lib/media/client-upload-photo";
 
 interface FileUploaderProps {
   onUploadComplete: () => void;
@@ -21,39 +22,7 @@ export function FileUploader({
       setError(null);
       setUploading(true);
       try {
-        const presignRes = await fetch("/api/profile/media/presign-upload", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            fileName: file.name,
-            mimeType: file.type,
-            sizeBytes: file.size,
-            category,
-          }),
-        });
-        if (!presignRes.ok) {
-          const body = await presignRes.json().catch(() => null);
-          throw new Error(body?.error ?? "Failed to get upload URL");
-        }
-        const { uploadUrl, mediaId } = await presignRes.json();
-
-        const putRes = await fetch(uploadUrl, {
-          method: "PUT",
-          headers: { "Content-Type": file.type },
-          body: file,
-        });
-        if (!putRes.ok) throw new Error("Upload to storage failed");
-
-        const confirmRes = await fetch(
-          "/api/profile/media/confirm-upload",
-          {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ mediaId }),
-          },
-        );
-        if (!confirmRes.ok) throw new Error("Upload confirmation failed");
-
+        await uploadUserMediaPhoto(file, { category });
         onUploadComplete();
       } catch (err) {
         setError(err instanceof Error ? err.message : "Upload failed");
@@ -117,13 +86,15 @@ export function FileUploader({
             ? "Uploading…"
             : "Drag & drop or click to upload"}
         </p>
-        <p className="text-xs text-text-muted/90">JPEG, PNG, WebP up to 10 MB</p>
+        <p className="text-xs text-text-muted/90">
+          JPEG, PNG, WebP, HEIC (converted to JPEG) up to 10 MB
+        </p>
       </div>
 
       <input
         ref={inputRef}
         type="file"
-        accept="image/jpeg,image/png,image/webp"
+        accept="image/jpeg,image/png,image/webp,image/heic,image/heif,.heic,.heif"
         className="hidden"
         onChange={(e) => handleFiles(e.target.files)}
       />

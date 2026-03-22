@@ -12,6 +12,7 @@ export async function api<T = unknown>(
 ): Promise<T> {
   const res = await fetch(url, {
     method: opts.method || "GET",
+    credentials: "include",
     headers: { "Content-Type": "application/json", ...opts.headers },
     body: opts.body ? JSON.stringify(opts.body) : undefined,
   });

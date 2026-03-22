@@ -22,7 +22,78 @@ type MeeshoProductData = {
   };
 };
 
+const MAX_DEEP_DEPTH = 14;
+
+function deepFindProductData(node: unknown, depth = 0): MeeshoProductData | null {
+  if (depth > MAX_DEEP_DEPTH || node === null || typeof node !== "object") return null;
+  if (Array.isArray(node)) {
+    for (const x of node) {
+      const r = deepFindProductData(x, depth + 1);
+      if (r) return r;
+    }
+    return null;
+  }
+  const o = node as Record<string, unknown>;
+  const pd = o.productData;
+  if (pd && typeof pd === "object") {
+    const p = pd as Record<string, unknown>;
+    if (
+      typeof p.name === "string" ||
+      typeof p.product_name === "string" ||
+      Array.isArray(p.images) ||
+      p.catalog_info
+    ) {
+      return pd as MeeshoProductData;
+    }
+  }
+  for (const v of Object.values(o)) {
+    const r = deepFindProductData(v, depth + 1);
+    if (r) return r;
+  }
+  return null;
+}
+
+/** Full `__NEXT_DATA__` payload — regex-based parse often truncates nested JSON. */
+function extractNextDataRoot(html: string): Record<string, unknown> | null {
+  const m = html.match(/id=["']__NEXT_DATA__["'][^>]*>/i);
+  if (!m || m.index === undefined) return null;
+  const startIdx = m.index + m[0].length;
+  const endIdx = html.indexOf("</script>", startIdx);
+  if (endIdx === -1) return null;
+  const jsonStr = html.slice(startIdx, endIdx).trim();
+  if (jsonStr.length < 10) return null;
+  try {
+    return JSON.parse(jsonStr) as Record<string, unknown>;
+  } catch {
+    return null;
+  }
+}
+
+function productDataFromNextRoot(root: Record<string, unknown>): MeeshoProductData | null {
+  const props = root.props;
+  if (props && typeof props === "object") {
+    const pageProps = (props as Record<string, unknown>).pageProps as
+      | Record<string, unknown>
+      | undefined;
+    if (pageProps?.productData && typeof pageProps.productData === "object") {
+      return pageProps.productData as MeeshoProductData;
+    }
+    const deep = deepFindProductData(pageProps, 0);
+    if (deep) return deep;
+  }
+  if (root.productData && typeof root.productData === "object") {
+    return root.productData as MeeshoProductData;
+  }
+  return deepFindProductData(root, 0);
+}
+
 function extractMeeshoJson(html: string): MeeshoProductData | null {
+  const nextRoot = extractNextDataRoot(html);
+  if (nextRoot) {
+    const fromTree = productDataFromNextRoot(nextRoot);
+    if (fromTree) return fromTree;
+  }
+
   const patterns = [
     /__NEXT_DATA__[^>]*>\s*(\{[\s\S]*?\})\s*<\/script>/,
     /window\.__INITIAL_STATE__\s*=\s*(\{[\s\S]*?\});\s*(?:<\/script>|\n)/,
@@ -59,6 +130,14 @@ function extractMeeshoJson(html: string): MeeshoProductData | null {
   return null;
 }
 
+function extractOgImage(html: string): string | undefined {
+  const m =
+    html.match(/<meta[^>]+property=["']og:image["'][^>]+content=["']([^"']+)["']/i) ??
+    html.match(/<meta[^>]+content=["']([^"']+)["'][^>]+property=["']og:image["']/i);
+  const u = m?.[1]?.trim();
+  return u || undefined;
+}
+
 export function extract(html: string): RawProductData {
   const meeshoData = extractMeeshoJson(html);
 
@@ -73,9 +152,9 @@ export function extract(html: string): RawProductData {
   data.category = meeshoData.category;
   data.genderTarget = meeshoData.gender;
 
-  if (meeshoData.images) {
+  if (meeshoData.images?.length) {
     data.images = [...meeshoData.images];
-  } else if (meeshoData.catalog_info?.images) {
+  } else if (meeshoData.catalog_info?.images?.length) {
     data.images = [...meeshoData.catalog_info.images];
   }
 
@@ -104,6 +183,11 @@ export function extract(html: string): RawProductData {
     const fallback = genericExtract(html);
     if (!data.title) data.title = fallback.title;
     if (data.images.length === 0) data.images = fallback.images;
+  }
+
+  if (data.images.length === 0) {
+    const og = extractOgImage(html);
+    if (og) data.images = [og];
   }
 
   return data;

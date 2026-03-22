@@ -10,7 +10,11 @@ export async function POST(req: NextRequest) {
   const ip = req.headers.get("x-forwarded-for") || "local";
   if (!checkRateLimit(`login:${ip}`, 10, 60_000)) return fail("Too many requests", 429);
   const parsed = loginSchema.safeParse(await req.json());
-  if (!parsed.success) return fail(parsed.error.message, 422);
+  if (!parsed.success) {
+    const msg =
+      parsed.error.issues[0]?.message ?? "Please check your email and password.";
+    return fail(msg, 422);
+  }
   const user = await prisma.user.findUnique({ where: { email: parsed.data.email } });
   if (!user) return fail("Invalid credentials", 401);
   const okPwd = await verifyPassword(parsed.data.password, user.passwordHash);

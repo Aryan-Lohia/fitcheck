@@ -30,17 +30,9 @@ interface BookingSlot {
 }
 
 async function fetchBookings(): Promise<{ requests: BookingRequest[] }> {
-  const res = await fetch("/api/freelancer/requests?status=accepted");
+  const res = await fetch("/api/freelancer/requests?status=active");
   if (!res.ok) throw new Error("Failed to fetch");
-  const accepted = await res.json();
-
-  const res2 = await fetch("/api/freelancer/requests?status=meeting_link_sent");
-  if (!res2.ok) throw new Error("Failed to fetch");
-  const linked = await res2.json();
-
-  return {
-    requests: [...accepted.requests, ...linked.requests],
-  };
+  return res.json();
 }
 
 async function fetchSlots(): Promise<{ slots: BookingSlot[] }> {
@@ -54,7 +46,11 @@ void _HOURS;
 
 const STATUS_COLORS: Record<string, string> = {
   accepted: "border-brand-warm/40 bg-brand-warm/15 text-brand-accent",
+  awaiting_payment: "border-brand-warm/35 bg-brand-warm/12 text-brand-accent",
+  payment_submitted: "border-brand-blue/30 bg-brand-blue/10 text-brand-blue",
+  payment_confirmed: "border-brand-accent/35 bg-brand-accent/10 text-brand-accent",
   meeting_link_sent: "border-brand-blue/35 bg-brand-blue/12 text-brand-blue",
+  in_progress: "border-brand-blue/35 bg-brand-blue/12 text-brand-blue",
 };
 
 export default function FreelancerCalendarPage() {

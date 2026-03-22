@@ -17,7 +17,16 @@ export async function GET() {
     prisma.bookingRequest.count({
       where: {
         freelancerId: fp.id,
-        status: { in: ["accepted", "meeting_link_sent"] },
+        status: {
+          in: [
+            "accepted",
+            "awaiting_payment",
+            "payment_submitted",
+            "payment_confirmed",
+            "meeting_link_sent",
+            "in_progress",
+          ],
+        },
       },
     }),
     prisma.bookingRequest.count({

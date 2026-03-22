@@ -3,31 +3,10 @@
  * Run: npm run test:gemini
  * Loads GEMINI_API_KEY from process.env or project root `.env` (simple parser).
  */
-import { readFileSync, existsSync } from "node:fs";
-import { join } from "node:path";
 import { GoogleGenerativeAI } from "@google/generative-ai";
+import { loadDotEnvFromProjectRoot } from "./load-dot-env";
 
-function loadDotEnv() {
-  const envPath = join(process.cwd(), ".env");
-  if (!existsSync(envPath)) return;
-  for (const line of readFileSync(envPath, "utf8").split(/\r?\n/)) {
-    const t = line.trim();
-    if (!t || t.startsWith("#")) continue;
-    const i = t.indexOf("=");
-    if (i <= 0) continue;
-    const k = t.slice(0, i).trim();
-    let v = t.slice(i + 1).trim();
-    if (
-      (v.startsWith('"') && v.endsWith('"')) ||
-      (v.startsWith("'") && v.endsWith("'"))
-    ) {
-      v = v.slice(1, -1);
-    }
-    if (!process.env[k]) process.env[k] = v;
-  }
-}
-
-loadDotEnv();
+loadDotEnvFromProjectRoot();
 
 async function main() {
   const key = process.env.GEMINI_API_KEY?.trim();

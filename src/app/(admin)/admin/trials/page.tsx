@@ -62,7 +62,7 @@ export default function AdminTrialsPage() {
           <button
             key={t.value}
             onClick={() => setTab(t.value)}
-            className={`rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${tab === t.value ? "bg-text-primary text-white" : "bg-black/[0.06] text-black/65 hover:bg-black/[0.08]"
+            className={`rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${tab === t.value ? "bg-text-primary text-white" : "bg-text-primary/10 text-text-muted hover:bg-text-primary/[0.14]"
               }`}
           >
             {t.label}
@@ -122,13 +122,13 @@ export default function AdminTrialsPage() {
                       </td>
                       <td className="px-4 py-3">
                         <span
-                          className={`rounded-full px-2 py-0.5 text-xs font-medium ${t.proEnabled ? "bg-brand-blue/15 text-brand-blue" : "bg-black/[0.06] text-black/65"}`}
+                          className={`rounded-full px-2 py-0.5 text-xs font-medium ${t.proEnabled ? "bg-brand-blue/15 text-brand-blue" : "bg-text-primary/10 text-text-muted"}`}
                         >
                           {t.proEnabled ? "Pro" : "Basic"}
                         </span>
                       </td>
                       <td className="px-4 py-3">
-                        <span className="rounded-full bg-black/[0.06] px-2 py-0.5 text-xs font-medium capitalize text-black/65">
+                        <span className="rounded-full bg-black/[0.06] px-2 py-0.5 text-xs font-medium capitalize text-text-muted">
                           {t.status}
                         </span>
                       </td>
@@ -152,7 +152,7 @@ export default function AdminTrialsPage() {
                       <p className="text-xs text-text-muted">{t.user.email}</p>
                     </div>
                     <span
-                      className={`rounded-full px-2 py-0.5 text-xs font-medium ${t.proEnabled ? "bg-brand-blue/15 text-brand-blue" : "bg-black/[0.06] text-black/65"}`}
+                      className={`rounded-full px-2 py-0.5 text-xs font-medium ${t.proEnabled ? "bg-brand-blue/15 text-brand-blue" : "bg-text-primary/10 text-text-muted"}`}
                     >
                       {t.proEnabled ? "Pro" : "Basic"}
                     </span>

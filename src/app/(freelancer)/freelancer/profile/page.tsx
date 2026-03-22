@@ -1,7 +1,9 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { Suspense, useCallback, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useRouter, useSearchParams } from "next/navigation";
+import { safeInternalNextPath } from "@/lib/auth/safe-next-path";
 interface FreelancerProfile {
   id: string;
   bio: string | null;
@@ -61,7 +63,12 @@ async function saveProfile(body: Record<string, unknown>) {
   return res.json();
 }
 
-export default function FreelancerProfilePage() {
+function FreelancerProfilePageInner() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const onboardingFlow = searchParams.get("onboarding") === "1";
+  const safeNext = safeInternalNextPath(searchParams.get("next"));
+
   const queryClient = useQueryClient();
   const { data, isLoading } = useQuery({
     queryKey: ["freelancer-profile"],
@@ -90,7 +97,16 @@ export default function FreelancerProfilePage() {
 
   const mutation = useMutation({
     mutationFn: saveProfile,
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["freelancer-profile"] }),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["freelancer-profile"] });
+      if (safeNext) {
+        router.replace(safeNext);
+        return;
+      }
+      if (onboardingFlow) {
+        router.replace("/freelancer/dashboard");
+      }
+    },
   });
 
   const toggleTag = useCallback((tag: string) => {
@@ -150,6 +166,16 @@ export default function FreelancerProfilePage() {
   return (
     <main className="mx-auto max-w-4xl p-4 md:px-6">
       <h1 className="mb-6 text-2xl font-semibold text-text-primary">Profile &amp; Application</h1>
+
+      {onboardingFlow && (
+        <div className="mb-6 rounded-lg border border-brand-blue/30 bg-brand-blue/8 p-4 text-sm text-brand-blue">
+          <p className="font-semibold">Finish your freelancer profile</p>
+          <p className="mt-1 text-text-primary">
+            Add your bio, links, and specializations, then submit your application. This replaces the
+            shopper onboarding flow—your client-facing work starts here.
+          </p>
+        </div>
+      )}
 
       {/* Status banner */}
       <div
@@ -282,8 +308,8 @@ export default function FreelancerProfilePage() {
                   onClick={() => toggleTag(tag)}
                   disabled={isLocked}
                   className={`rounded-full border px-3 py-1.5 text-xs font-medium transition-colors ${active
-                      ? "border-brand-accent bg-brand-accent text-white"
-                      : "border-border-subtle bg-surface text-text-primary hover:bg-surface-muted"
+                    ? "border-brand-accent bg-brand-accent text-white"
+                    : "border-border-subtle bg-surface text-text-primary hover:bg-surface-muted"
                     } disabled:opacity-50`}
                 >
                   {tag}
@@ -318,5 +344,22 @@ export default function FreelancerProfilePage() {
         )}
       </form>
     </main>
+  );
+}
+
+export default function FreelancerProfilePage() {
+  return (
+    <Suspense
+      fallback={
+        <main className="mx-auto max-w-4xl p-4 md:px-6">
+          <div className="animate-pulse space-y-4">
+            <div className="h-8 w-48 rounded bg-border-subtle" />
+            <div className="h-40 rounded bg-border-subtle" />
+          </div>
+        </main>
+      }
+    >
+      <FreelancerProfilePageInner />
+    </Suspense>
   );
 }

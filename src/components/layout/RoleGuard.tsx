@@ -16,7 +16,7 @@ export function RoleGuard({
 
   useEffect(() => {
     if (!isLoading && user && !roles.includes(user.role)) {
-      router.replace("/dashboard");
+      router.replace("/chat");
     }
   }, [isLoading, user, roles, router]);
 

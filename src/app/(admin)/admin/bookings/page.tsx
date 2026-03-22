@@ -17,9 +17,12 @@ interface Booking {
 }
 
 const statusColors: Record<string, string> = {
-  draft: "bg-black/[0.06] text-black/65",
+  draft: "bg-text-primary/10 text-text-muted",
   requested: "bg-brand-warm/20 text-brand-accent",
   accepted: "bg-brand-blue/15 text-brand-blue",
+  awaiting_payment: "bg-brand-warm/18 text-brand-accent",
+  payment_submitted: "bg-brand-blue/12 text-brand-blue",
+  payment_confirmed: "bg-brand-accent/12 text-brand-accent",
   meeting_link_sent: "bg-brand-blue/12 text-brand-blue",
   in_progress: "bg-brand-accent/12 text-brand-accent",
   completed: "bg-brand-blue/10 text-brand-blue",
@@ -27,7 +30,17 @@ const statusColors: Record<string, string> = {
   refunded: "bg-brand-warm/25 text-brand-accent",
 };
 
-const allStatuses = ["all", "requested", "accepted", "in_progress", "completed", "cancelled"];
+const allStatuses = [
+  "all",
+  "requested",
+  "accepted",
+  "awaiting_payment",
+  "payment_submitted",
+  "meeting_link_sent",
+  "in_progress",
+  "completed",
+  "cancelled",
+];
 
 export default function AdminBookingsPage() {
   const [statusFilter, setStatusFilter] = useState("all");
@@ -62,7 +75,7 @@ export default function AdminBookingsPage() {
           <button
             key={s}
             onClick={() => setStatusFilter(s)}
-            className={`rounded-md px-3 py-1.5 text-sm font-medium capitalize transition-colors ${statusFilter === s ? "bg-text-primary text-white" : "bg-black/[0.06] text-black/65 hover:bg-black/[0.08]"
+            className={`rounded-md px-3 py-1.5 text-sm font-medium capitalize transition-colors ${statusFilter === s ? "bg-text-primary text-white" : "bg-text-primary/10 text-text-muted hover:bg-text-primary/[0.14]"
               }`}
           >
             {s === "all" ? "All" : s.replace("_", " ")}
@@ -98,7 +111,7 @@ export default function AdminBookingsPage() {
                       <p className="font-medium">{b.user.name}</p>
                       <p className="text-xs text-text-muted">{b.user.email}</p>
                     </td>
-                    <td className="px-4 py-3 text-black/65">
+                    <td className="px-4 py-3 text-text-muted">
                       {b.freelancer?.user.name ?? "—"}
                     </td>
                     <td className="max-w-[200px] truncate px-4 py-3">{b.topic}</td>

@@ -1,17 +1,17 @@
 "use client";
 
+import { ONBOARDING_STYLE_OPTIONS } from "@/lib/profile/fashion-profile";
+
 const STYLE_TAGS = [
-  "Casual",
+  ...ONBOARDING_STYLE_OPTIONS,
   "Formal",
   "Streetwear",
-  "Minimalist",
   "Bohemian",
   "Athletic",
   "Vintage",
-  "Preppy",
   "Business",
   "Party",
-];
+].filter((tag, i, a) => a.indexOf(tag) === i);
 
 interface StyleTagPickerProps {
   selected: string[];
@@ -42,8 +42,8 @@ export function StyleTagPicker({ selected, onChange }: StyleTagPickerProps) {
               aria-pressed={active}
               onClick={() => toggle(tag)}
               className={`min-h-10 rounded-full px-4 py-2 text-sm font-medium transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring-focus/40 ${active
-                  ? "bg-brand-accent text-white shadow-sm"
-                  : "bg-surface-muted text-text-primary hover:bg-brand-warm/20"
+                ? "bg-brand-accent text-white shadow-sm"
+                : "bg-surface-muted text-text-primary hover:bg-brand-warm/20"
                 }`}
             >
               {tag}

@@ -1,13 +1,13 @@
 import { z } from "zod";
 
 export const signupSchema = z.object({
-  name: z.string().min(2),
-  email: z.email(),
-  password: z.string().min(8),
+  name: z.string().min(2, "Name must be at least 2 characters."),
+  email: z.email("Enter a valid email address."),
+  password: z.string().min(8, "Password must be at least 8 characters."),
   role: z.enum(["USER", "FREELANCE_USER"]).default("USER"),
 });
 
 export const loginSchema = z.object({
-  email: z.email(),
-  password: z.string().min(8),
+  email: z.email("Enter a valid email address."),
+  password: z.string().min(8, "Password must be at least 8 characters."),
 });

@@ -56,9 +56,8 @@ export default function AdminLogsPage() {
             <button
               key={opt.value}
               onClick={() => setDays(opt.value)}
-              className={`rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
-                days === opt.value ? "bg-text-primary text-white" : "bg-black/[0.06] text-black/65 hover:bg-black/[0.08]"
-              }`}
+              className={`rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${days === opt.value ? "bg-text-primary text-white" : "bg-text-primary/10 text-text-muted hover:bg-text-primary/[0.14]"
+                }`}
             >
               {opt.label}
             </button>
@@ -115,7 +114,7 @@ export default function AdminLogsPage() {
                         <span className="text-text-muted/80">System</span>
                       )}
                     </td>
-                    <td className="px-4 py-3 text-black/65">
+                    <td className="px-4 py-3 text-text-muted">
                       <span className="text-xs">{log.entityType}</span>
                       <span className="ml-1 text-xs text-text-muted/80">{log.entityId.slice(0, 8)}...</span>
                     </td>

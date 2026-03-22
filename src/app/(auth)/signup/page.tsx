@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense } from "react";
+import { Suspense, useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import Link from "next/link";
@@ -21,6 +21,8 @@ function SignupForm() {
   const searchParams = useSearchParams();
   const nextRaw = searchParams.get("next");
   const safeNext = safeInternalNextPath(nextRaw);
+  const landingPrompt = searchParams.get("prompt")?.trim() || null;
+  const [formError, setFormError] = useState<string | null>(null);
   const {
     register,
     handleSubmit,
@@ -31,23 +33,45 @@ function SignupForm() {
   });
 
   const onSubmit = async (values: SignupForm) => {
-    const parsed = signupSchema.safeParse(values);
-    if (!parsed.success) return;
-    const res = await fetch("/api/auth/signup", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(parsed.data),
-    });
-    if (res.ok) {
-      const d = await res.json();
-      if (safeNext) {
-        router.push(safeNext);
+    setFormError(null);
+    try {
+      const res = await fetch("/api/auth/signup", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(values),
+      });
+      if (res.ok) {
+        if (values.role === "FREELANCE_USER") {
+          const q = new URLSearchParams({ onboarding: "1" });
+          if (safeNext) q.set("next", safeNext);
+          router.push(`/freelancer/profile?${q.toString()}`);
+          return;
+        }
+        const nextParam = safeNext
+          ? `?next=${encodeURIComponent(safeNext)}`
+          : "";
+        router.push(`/onboarding${nextParam}`);
         return;
       }
-      router.push(
-        d.user?.role === "FREELANCE_USER"
-          ? "/freelancer/dashboard"
-          : "/dashboard",
+      let message = "Something went wrong. Please try again.";
+      try {
+        const data: unknown = await res.json();
+        if (
+          data &&
+          typeof data === "object" &&
+          "error" in data &&
+          typeof (data as { error: unknown }).error === "string"
+        ) {
+          const err = (data as { error: string }).error.trim();
+          if (err) message = err;
+        }
+      } catch {
+        /* non-JSON response */
+      }
+      setFormError(message);
+    } catch {
+      setFormError(
+        "Network error. Check your connection and try again.",
       );
     }
   };
@@ -78,9 +102,23 @@ function SignupForm() {
         onSubmit={handleSubmit(onSubmit)}
         noValidate
       >
+
+        {formError ? (
+          <p
+            className="rounded-lg border border-brand-primary/25 bg-brand-primary/5 px-3 py-2 text-sm text-brand-primary"
+            role="alert"
+          >
+            {formError}
+          </p>
+        ) : null}
         <div>
           <Label htmlFor="signup-name">Full name</Label>
-          <Input id="signup-name" className="mt-1.5" {...register("name")} />
+          <Input
+            id="signup-name"
+            className="mt-1.5"
+            aria-invalid={errors.name ? true : undefined}
+            {...register("name")}
+          />
           {errors.name?.message ? (
             <p className="mt-1 text-xs text-brand-primary" role="alert">
               {errors.name.message}
@@ -94,6 +132,7 @@ function SignupForm() {
             type="email"
             autoComplete="email"
             className="mt-1.5"
+            aria-invalid={errors.email ? true : undefined}
             {...register("email")}
           />
           {errors.email?.message ? (
@@ -109,6 +148,7 @@ function SignupForm() {
             type="password"
             autoComplete="new-password"
             className="mt-1.5"
+            aria-invalid={errors.password ? true : undefined}
             {...register("password")}
           />
           {errors.password?.message ? (

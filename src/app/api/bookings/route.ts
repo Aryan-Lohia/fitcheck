@@ -33,5 +33,14 @@ export async function POST(req: NextRequest) {
     },
   });
 
+  await prisma.payment.create({
+    data: {
+      bookingId: booking.id,
+      provider: "manual",
+      amount: 0,
+      status: "pending",
+    },
+  });
+
   return ok({ booking });
 }

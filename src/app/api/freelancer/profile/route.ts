@@ -20,6 +20,14 @@ export async function POST(req: NextRequest) {
 
   const body = await req.json();
 
+  const existing = await prisma.freelancerProfile.findUnique({
+    where: { userId: session.userId },
+  });
+
+  /** First submit from draft (signup creates an empty row) or explicit resubmit after rejection / needs_more_info. */
+  const submitApplication =
+    existing?.verificationStatus === "draft" || body.resubmit === true;
+
   const profile = await prisma.freelancerProfile.upsert({
     where: { userId: session.userId },
     create: {
@@ -35,7 +43,7 @@ export async function POST(req: NextRequest) {
       portfolioLinksJson: body.portfolioLinks,
       pastWorkLinksJson: body.pastWorkLinks,
       expertiseTagsJson: body.specializations,
-      verificationStatus: body.resubmit ? "submitted" : undefined,
+      ...(submitApplication ? { verificationStatus: "submitted" as const } : {}),
     },
   });
 

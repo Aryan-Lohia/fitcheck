@@ -10,7 +10,11 @@ import { signupConfirmation } from "@/lib/email/templates/signupConfirmation";
 
 export async function POST(req: NextRequest) {
   const parsed = signupSchema.safeParse(await req.json());
-  if (!parsed.success) return fail(parsed.error.message, 422);
+  if (!parsed.success) {
+    const msg =
+      parsed.error.issues[0]?.message ?? "Please check the form and try again.";
+    return fail(msg, 422);
+  }
   const exists = await prisma.user.findUnique({ where: { email: parsed.data.email } });
   if (exists) return fail("Email already exists", 409);
   const passwordHash = await hashPassword(parsed.data.password);

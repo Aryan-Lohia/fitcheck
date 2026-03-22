@@ -23,7 +23,7 @@ export function AuthSplitShell({
         <div
           className={cn(
             "relative hidden flex-col justify-between overflow-hidden px-10 py-12 lg:flex",
-            "bg-gradient-to-br from-brand-warm/25 via-surface to-brand-blue/10",
+            "bg-gradient-to-br from-brand-warm/12 via-surface-muted to-brand-blue/18",
           )}
         >
           <header>

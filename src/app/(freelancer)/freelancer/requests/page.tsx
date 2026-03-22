@@ -1,7 +1,9 @@
 "use client";
 
+import Link from "next/link";
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+
 interface BookingRequest {
   id: string;
   topic: string;
@@ -14,7 +16,7 @@ interface BookingRequest {
   user: { name: string; email: string };
 }
 
-type Tab = "open" | "accepted";
+type Tab = "open" | "active";
 
 async function fetchRequests(status: string): Promise<{ requests: BookingRequest[] }> {
   const res = await fetch(`/api/freelancer/requests?status=${status}`);
@@ -34,25 +36,8 @@ async function declineRequest(id: string) {
   return res.json();
 }
 
-async function saveMeetingLink(id: string, meetingLink: string) {
-  const res = await fetch(`/api/bookings/${id}/meeting-link`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ meetingLink }),
-  });
-  if (!res.ok) throw new Error("Failed to save meeting link");
-  return res.json();
-}
-
-function RequestCard({
-  request,
-  tab,
-}: {
-  request: BookingRequest;
-  tab: Tab;
-}) {
+function RequestCard({ request, tab }: { request: BookingRequest; tab: Tab }) {
   const queryClient = useQueryClient();
-  const [link, setLink] = useState("");
 
   const accept = useMutation({
     mutationFn: () => acceptRequest(request.id),
@@ -68,21 +53,10 @@ function RequestCard({
     },
   });
 
-  const addLink = useMutation({
-    mutationFn: () => saveMeetingLink(request.id, link),
-    onSuccess: () => {
-      setLink("");
-      queryClient.invalidateQueries({ queryKey: ["freelancer-requests"] });
-    },
-  });
-
-  const preferred = request.preferredTime
-    ? new Date(request.preferredTime)
-    : null;
+  const preferred = request.preferredTime ? new Date(request.preferredTime) : null;
   const urgentThreshold = 24 * 60 * 60 * 1000;
   const [now] = useState(() => Date.now());
-  const isUrgent =
-    preferred && preferred.getTime() - now < urgentThreshold;
+  const isUrgent = preferred && preferred.getTime() - now < urgentThreshold;
 
   return (
     <div className="rounded-lg border border-border-subtle bg-surface p-4 shadow-sm">
@@ -96,10 +70,15 @@ function RequestCard({
             Urgent
           </span>
         )}
+        {tab === "active" && (
+          <span className="shrink-0 rounded-full bg-brand-blue/12 px-2 py-0.5 text-xs font-medium capitalize text-brand-blue">
+            {request.status.replace(/_/g, " ")}
+          </span>
+        )}
       </div>
 
       {request.notes && (
-        <p className="mt-2 line-clamp-2 text-sm text-black/65">{request.notes}</p>
+        <p className="mt-2 line-clamp-2 text-sm text-text-muted">{request.notes}</p>
       )}
 
       <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-xs text-text-muted">
@@ -120,6 +99,7 @@ function RequestCard({
       {tab === "open" && (
         <div className="mt-4 flex gap-2">
           <button
+            type="button"
             onClick={() => accept.mutate()}
             disabled={accept.isPending || decline.isPending}
             className="rounded-lg bg-brand-accent px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-brand-accent/92 disabled:opacity-50"
@@ -127,6 +107,7 @@ function RequestCard({
             {accept.isPending ? "Accepting..." : "Accept"}
           </button>
           <button
+            type="button"
             onClick={() => decline.mutate()}
             disabled={accept.isPending || decline.isPending}
             className="rounded-lg border border-border-subtle bg-surface px-4 py-2 text-sm font-medium text-text-primary transition-colors hover:bg-surface-muted disabled:opacity-50"
@@ -136,37 +117,25 @@ function RequestCard({
         </div>
       )}
 
-      {tab === "accepted" && !request.meetingLink && (
-        <div className="mt-4 flex gap-2">
-          <input
-            type="url"
-            value={link}
-            onChange={(e) => setLink(e.target.value)}
-            placeholder="https://meet.google.com/..."
-            className="flex-1 rounded-lg border border-border-subtle bg-surface px-3 py-2 text-sm focus:border-brand-blue/50 focus:ring-1 focus:ring-brand-blue/35"
-          />
-          <button
-            onClick={() => addLink.mutate()}
-            disabled={!link || addLink.isPending}
-            className="shrink-0 rounded-lg bg-brand-accent px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-brand-accent/92 disabled:opacity-50"
+      {tab === "active" && (
+        <div className="mt-4 flex flex-wrap gap-2">
+          <Link
+            href={`/freelancer/booking/${request.id}`}
+            className="inline-flex rounded-lg bg-brand-accent px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-brand-accent/92"
           >
-            {addLink.isPending ? "Saving..." : "Save Link"}
-          </button>
+            Open booking room
+          </Link>
+          {request.meetingLink && (
+            <a
+              href={request.meetingLink}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex rounded-lg border border-brand-blue/40 px-4 py-2 text-sm font-medium text-brand-blue underline-offset-2 hover:underline"
+            >
+              Join Meet
+            </a>
+          )}
         </div>
-      )}
-
-      {tab === "accepted" && request.meetingLink && (
-        <p className="mt-3 text-sm text-brand-blue">
-          Link sent:{" "}
-          <a
-            href={request.meetingLink}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="underline"
-          >
-            {request.meetingLink}
-          </a>
-        </p>
       )}
     </div>
   );
@@ -175,7 +144,7 @@ function RequestCard({
 export default function FreelancerRequestsPage() {
   const [tab, setTab] = useState<Tab>("open");
 
-  const statusParam = tab === "open" ? "requested" : "accepted";
+  const statusParam = tab === "open" ? "requested" : "active";
 
   const { data, isLoading } = useQuery({
     queryKey: ["freelancer-requests", statusParam],
@@ -186,20 +155,20 @@ export default function FreelancerRequestsPage() {
 
   return (
     <main className="mx-auto max-w-4xl p-4">
-      <h1 className="text-2xl font-semibold mb-4">Requests</h1>
+      <h1 className="mb-4 text-2xl font-semibold">Requests</h1>
 
-      {/* Tab bar */}
       <div className="mb-6 flex gap-1 rounded-lg bg-black/[0.06] p-1">
-        {(["open", "accepted"] as const).map((t) => (
+        {(["open", "active"] as const).map((t) => (
           <button
             key={t}
+            type="button"
             onClick={() => setTab(t)}
             className={`flex-1 rounded-md px-4 py-2 text-sm font-medium transition-colors ${tab === t
               ? "bg-surface text-text-primary shadow-sm"
-              : "text-black/65 hover:text-text-primary"
+              : "text-text-muted hover:text-text-primary"
               }`}
           >
-            {t === "open" ? "Open Requests" : "My Accepted"}
+            {t === "open" ? "Open pool" : "My bookings"}
           </button>
         ))}
       </div>
@@ -214,7 +183,7 @@ export default function FreelancerRequestsPage() {
         <p className="py-12 text-center text-sm text-text-muted">
           {tab === "open"
             ? "No open requests right now."
-            : "No accepted requests yet."}
+            : "No active bookings. Accept a request to start."}
         </p>
       ) : (
         <div className="space-y-3">

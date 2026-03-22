@@ -2,6 +2,7 @@
 
 import { UserAppShell } from "@/components/layout/user-app-shell";
 import { ProtectedRoute } from "@/components/layout/ProtectedRoute";
+import { OnboardingGate } from "@/components/onboarding/OnboardingGate";
 import { ErrorBoundary } from "@/components/ui/ErrorBoundary";
 
 export default function UserLayout({
@@ -11,9 +12,11 @@ export default function UserLayout({
 }) {
   return (
     <ProtectedRoute>
-      <ErrorBoundary>
-        <UserAppShell>{children}</UserAppShell>
-      </ErrorBoundary>
+      <OnboardingGate>
+        <ErrorBoundary>
+          <UserAppShell>{children}</UserAppShell>
+        </ErrorBoundary>
+      </OnboardingGate>
     </ProtectedRoute>
   );
 }

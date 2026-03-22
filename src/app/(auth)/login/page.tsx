@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense } from "react";
+import { Suspense, useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import Link from "next/link";
@@ -11,6 +11,7 @@ import { safeInternalNextPath } from "@/lib/auth/safe-next-path";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { postLoginPathForRole } from "@/lib/auth/post-login-path";
 import { loginSchema } from "@/lib/validators/auth";
 
 function LoginForm() {
@@ -18,6 +19,7 @@ function LoginForm() {
   const searchParams = useSearchParams();
   const nextRaw = searchParams.get("next");
   const safeNext = safeInternalNextPath(nextRaw);
+  const [formError, setFormError] = useState<string | null>(null);
   const {
     register,
     handleSubmit,
@@ -27,24 +29,42 @@ function LoginForm() {
   });
 
   const onSubmit = async (values: z.infer<typeof loginSchema>) => {
-    const res = await fetch("/api/auth/login", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(values),
-    });
-    if (res.ok) {
-      const d = await res.json();
-      const role = d.user?.role;
-      if (safeNext) {
-        router.push(safeNext);
+    setFormError(null);
+    try {
+      const res = await fetch("/api/auth/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(values),
+      });
+      if (res.ok) {
+        const d = await res.json();
+        const role = d.user?.role;
+        if (safeNext) {
+          router.push(safeNext);
+          return;
+        }
+        router.push(postLoginPathForRole(role));
         return;
       }
-      router.push(
-        role === "ADMIN"
-          ? "/admin"
-          : role === "FREELANCE_USER"
-            ? "/freelancer/dashboard"
-            : "/dashboard",
+      let message = "Something went wrong. Please try again.";
+      try {
+        const data: unknown = await res.json();
+        if (
+          data &&
+          typeof data === "object" &&
+          "error" in data &&
+          typeof (data as { error: unknown }).error === "string"
+        ) {
+          const err = (data as { error: string }).error.trim();
+          if (err) message = err;
+        }
+      } catch {
+        /* non-JSON response */
+      }
+      setFormError(message);
+    } catch {
+      setFormError(
+        "Network error. Check your connection and try again.",
       );
     }
   };
@@ -75,6 +95,14 @@ function LoginForm() {
         onSubmit={handleSubmit(onSubmit)}
         noValidate
       >
+        {formError ? (
+          <p
+            className="rounded-lg border border-brand-primary/25 bg-brand-primary/5 px-3 py-2 text-sm text-brand-primary"
+            role="alert"
+          >
+            {formError}
+          </p>
+        ) : null}
         <div>
           <Label htmlFor="login-email">Email</Label>
           <Input
@@ -82,6 +110,7 @@ function LoginForm() {
             type="email"
             autoComplete="email"
             className="mt-1.5"
+            aria-invalid={errors.email ? true : undefined}
             {...register("email")}
           />
           {errors.email?.message ? (
@@ -97,6 +126,7 @@ function LoginForm() {
             type="password"
             autoComplete="current-password"
             className="mt-1.5"
+            aria-invalid={errors.password ? true : undefined}
             {...register("password")}
           />
           {errors.password?.message ? (

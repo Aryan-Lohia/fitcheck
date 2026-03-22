@@ -7,7 +7,7 @@ const APP_ORIGIN = (
 const HOST_ID = "fitcheck-run-host";
 
 function buildDashboardUrl(productHref: string): string {
-  return `${APP_ORIGIN}/dashboard?import=${encodeURIComponent(productHref)}`;
+  return `${APP_ORIGIN}/chat?import=${encodeURIComponent(productHref)}`;
 }
 
 function injectUi(): void {

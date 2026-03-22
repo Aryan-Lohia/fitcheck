@@ -14,7 +14,11 @@ interface BookingCardProps {
 const statusStyles: Record<string, string> = {
   requested: "bg-brand-warm/30 text-text-primary",
   accepted: "bg-brand-blue/12 text-brand-blue",
+  awaiting_payment: "bg-brand-warm/25 text-brand-accent",
+  payment_submitted: "bg-brand-blue/10 text-brand-blue",
+  payment_confirmed: "bg-brand-accent/12 text-brand-accent",
   meeting_link_sent: "bg-brand-accent/15 text-brand-accent",
+  in_progress: "bg-brand-blue/12 text-brand-blue",
   completed: "bg-border-subtle text-text-muted",
   cancelled: "bg-brand-primary/12 text-brand-primary",
 };

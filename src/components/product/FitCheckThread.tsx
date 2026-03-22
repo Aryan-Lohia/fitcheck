@@ -1,5 +1,7 @@
 "use client";
 
+import { profileMediaImageUrl } from "@/lib/media/profile-media-image-url";
+
 export type FitCheckThreadTurn = {
   key: string;
   at: string;
@@ -95,7 +97,7 @@ export function FitCheckThread({
                     </p>
                     {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img
-                      src={`/api/profile/media/${turn.tryOnMediaIds[label]}/view`}
+                      src={profileMediaImageUrl(turn.tryOnMediaIds[label], "tryOn")}
                       alt={`${title} try-on`}
                       className="h-36 w-full rounded-xl border border-border-subtle object-cover sm:h-40"
                     />

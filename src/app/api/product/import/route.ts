@@ -1,41 +1,12 @@
 import { NextRequest } from "next/server";
 import { z } from "zod";
-import { createHash } from "crypto";
 import { requireAuth } from "@/lib/auth/rbac";
-import { fetchPageHtml } from "@/lib/scraper/fetcher";
-import { detectDomainType } from "@/lib/scraper/router";
-import { normalizeProduct } from "@/lib/scraper/normalizer";
-import { PARSER_VERSION } from "@/lib/scraper/parser-version";
-import { prisma } from "@/lib/prisma/client";
 import { ok, fail } from "@/lib/http";
-import { extract as genericExtract } from "@/lib/scraper/adapters/genericAdapter";
-import { extract as shopifyExtract } from "@/lib/scraper/adapters/shopifyAdapter";
-import { extract as woocommerceExtract } from "@/lib/scraper/adapters/woocommerceAdapter";
-import { extract as myntraExtract } from "@/lib/scraper/adapters/myntraAdapter";
-import { extract as meeshoExtract } from "@/lib/scraper/adapters/meeshoAdapter";
-import { extract as ajioExtract } from "@/lib/scraper/adapters/ajioAdapter";
-import type { RawProductData } from "@/lib/scraper/adapters/types";
+import { importProductFromUrl } from "@/lib/product/import-from-url";
 
 const importSchema = z.object({
   url: z.string().url("A valid product URL is required"),
 });
-
-function routeToAdapter(domainType: string, html: string): RawProductData {
-  switch (domainType) {
-    case "shopify":
-      return shopifyExtract(html);
-    case "woocommerce":
-      return woocommerceExtract(html);
-    case "myntra-like":
-      return myntraExtract(html);
-    case "meesho-like":
-      return meeshoExtract(html);
-    case "ajio-like":
-      return ajioExtract(html);
-    default:
-      return genericExtract(html);
-  }
-}
 
 export async function POST(req: NextRequest) {
   const session = await requireAuth();
@@ -55,63 +26,36 @@ export async function POST(req: NextRequest) {
 
   const { url } = parsed.data;
 
-  let html: string;
   try {
-    html = await fetchPageHtml(url);
-  } catch (error) {
-    const message =
-      error instanceof Error
-        ? error.message
-        : "Unable to fetch the product page";
-    return fail(
-      `Unable to fetch the product page. Source error: ${message}`,
-      502,
-    );
-  }
-
-  const rawHtmlHash = createHash("sha256").update(html).digest("hex");
-
-  const existing = await prisma.productImport.findFirst({
-    where: { userId: session.userId, rawHtmlHash },
-    include: { images: true },
-  });
-
-  if (existing) {
-    return ok({
-      productImportId: existing.id,
-      normalized: existing.normalizedJson,
-      cached: true,
-    });
-  }
-
-  const domainType = detectDomainType(url);
-  const rawData = routeToAdapter(domainType, html);
-  const normalized = normalizeProduct(rawData);
-
-  const record = await prisma.productImport.create({
-    data: {
+    const result = await importProductFromUrl({
       userId: session.userId,
-      sourceUrl: url,
-      domainType,
-      title: normalized.title,
-      brand: normalized.brand,
-      price: rawData.price,
-      rawHtmlHash,
-      normalizedJson: JSON.parse(JSON.stringify(normalized)),
-      parserVersion: PARSER_VERSION,
-      images: {
-        create: normalized.images.slice(0, 20).map((imageUrl) => ({
-          imageUrl,
-          sourceType: domainType,
-        })),
-      },
-    },
-    include: { images: true },
-  });
-
-  return ok({
-    productImportId: record.id,
-    normalized,
-    cached: false,
-  });
+      url,
+    });
+    return ok({
+      productImportId: result.productImportId,
+      normalized: result.normalized,
+      cached: result.cached,
+    });
+  } catch (error) {
+    const raw = error instanceof Error ? error.message : "";
+    const lower = raw.toLowerCase();
+    let userMessage =
+      "We couldn't load this product. Try another link or a different item.";
+    if (lower.includes("timed out") || lower.includes("timeout")) {
+      userMessage =
+        "This product page didn't load in time (the site may be slow or blocking us). Try another product link.";
+    } else if (
+      lower.includes("403") ||
+      lower.includes("401") ||
+      lower.includes("forbidden") ||
+      lower.includes("blocked")
+    ) {
+      userMessage =
+        "We couldn't access that product page from our servers. Try another link or upload a product photo instead.";
+    } else if (lower.includes("empty") || lower.includes("insufficient html")) {
+      userMessage =
+        "That page didn't return usable product data. Try another product.";
+    }
+    return fail(userMessage, 502);
+  }
 }

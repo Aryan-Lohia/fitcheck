@@ -1,3 +1,5 @@
+import type { ChatMode } from "@/lib/chat/mode";
+
 type ProfileRecord = Record<string, unknown> | null;
 type ProductRecord = Record<string, unknown> | null;
 
@@ -27,8 +29,10 @@ const WIZARD_MEASUREMENT_FIELDS: Array<{ key: string; label: string }> = [
 ];
 
 export type WizardPhotoFlags = {
-  frontPhotoUploaded: boolean;
-  backPhotoUploaded: boolean;
+  /** First saved body reference (vault), or legacy “front-*.jpg” upload */
+  primaryReferencePhoto: boolean;
+  /** Second reference, or legacy “back-*.jpg” when paired with front */
+  secondaryReferencePhoto: boolean;
 };
 
 /**
@@ -42,13 +46,14 @@ export function buildWizardProfileContext(
 ): string {
   const lines: string[] = [
     "Profile source: same fields as the in-app Profile wizard (gender, fit preference, skin tone, style tags, body measurements, optional photos).",
-    "Always personalize fit, color, silhouette, and shopping suggestions using this context.",
+    "For clothing and footwear: personalize fit, color, silhouette, and shopping suggestions using this context.",
+    "For furniture, home, tools, gadgets, or other non-apparel shopping: do not treat gender/fit/style tags as mandatory filters unless the user explicitly mixes them into the ask.",
   ];
 
   if (!profile) {
     lines.push("Status: no saved profile yet — suggest completing Profile for better accuracy.");
     lines.push(
-      `Photos: front ${photos.frontPhotoUploaded ? "uploaded" : "not uploaded"}, back ${photos.backPhotoUploaded ? "uploaded" : "not uploaded"}.`,
+      `Try-on body references: primary ${photos.primaryReferencePhoto ? "set" : "not set"}, secondary ${photos.secondaryReferencePhoto ? "set" : "not set"} (any angle — front, back, side, ¾).`,
     );
     return lines.join("\n");
   }
@@ -115,14 +120,14 @@ export function buildWizardProfileContext(
   if (!fit) missing.push("preferred fit");
   if (!skin) missing.push("skin tone");
   if (measLines.length === 0) missing.push("measurements");
-  if (!photos.frontPhotoUploaded) missing.push("front photo");
-  if (!photos.backPhotoUploaded) missing.push("back photo");
+  if (!photos.primaryReferencePhoto) missing.push("primary body reference photo");
+  if (!photos.secondaryReferencePhoto) missing.push("second body reference photo");
   if (missing.length > 0) {
     lines.push(`Missing profile fields: ${missing.join(", ")}.`);
   }
 
   lines.push(
-    `Fit-check photos (wizard): front ${photos.frontPhotoUploaded ? "uploaded" : "missing"}, back ${photos.backPhotoUploaded ? "uploaded" : "missing"}.`,
+    `Try-on reference photos (wizard): primary ${photos.primaryReferencePhoto ? "saved" : "missing"}, secondary ${photos.secondaryReferencePhoto ? "saved" : "missing"}.`,
   );
 
   return lines.join("\n");
@@ -208,22 +213,31 @@ export function buildChatPrompt(params: {
   suggestedPicksRequested?: boolean;
   /** User attached vault / upload images — same multimodal turn */
   attachedImageCount?: number;
+  /** Shop = general merchandise + fashion; try-on = same assistant with emphasis on garment try-on when relevant */
+  chatMode?: ChatMode;
 }): string {
+  const mode = params.chatMode ?? "shop";
   const system = [
-    "You are FitCheck AI, a knowledgeable fashion and fit advisor.",
+    "You are FitCheck AI — a shopping assistant for clothing, footwear, and general merchandise (home, furniture, storage, kitchen, tools, garden, electronics, etc.).",
+    "You give accurate fit and sizing guidance for apparel when the question is about clothes or shoes.",
     "Rules:",
     "- Never hallucinate measurements or sizing data you were not given.",
-    "- Base answers strictly on the profile wizard context and any product info provided.",
+    "- Base answers on the profile wizard context when it applies (apparel/fit), and on live catalog data when products are listed.",
+    "- For non-apparel asks: never refuse solely because the catalog is fashion-heavy — use whatever relevant products were retrieved; if none match, say so briefly and still give practical buying tips (materials, dimensions, room fit, safety) without inventing SKUs.",
+    "- Do not redirect furniture, storage, or home questions into unrelated clothing picks unless the user asked for outfits.",
     "- If uncertain, say so briefly, then continue with useful guidance.",
     "- Prefer structured, actionable advice with concrete examples.",
     "- Keep the answer concise by default (around 90-140 words) unless user asks for deep detail.",
-    "- Even when profile completion is low, provide a detailed response with sections (what to choose, colors, fit, fabrics, styling, and shopping tips).",
-    "- If measurements are missing, give fit guidance by cut/silhouette and ask for measurements only at the end in one short line.",
+    "- For apparel topics: even when profile completion is low, give detailed guidance (silhouette, colors, fabrics, styling, shopping tips).",
+    "- If measurements are missing for a clothing question, give fit guidance by cut/silhouette and ask for measurements only at the end in one short line.",
     "- Avoid repetitive refusal/disclaimer language.",
+    mode === "tryon"
+      ? "- Try-on mode: when the user is clearly doing a virtual garment try-on, prioritize garment fit and visuals; they may still ask general shopping questions — answer those directly."
+      : "",
     "",
-    "User profile (ProfileWizard — use for every recommendation):",
+    "User profile (ProfileWizard — apply fully to clothing/shoes; use lightly or not at all for unrelated product categories):",
     params.wizardProfileContext,
-  ];
+  ].filter(Boolean);
 
   const nImg = params.attachedImageCount ?? 0;
   if (nImg > 0) {
@@ -232,7 +246,7 @@ export function buildChatPrompt(params: {
       `The user attached ${nImg} image(s) in this message (provided after this text as inline images).`,
     );
     system.push(
-      "Examine each image: garments, colors, patterns, fit/silhouette, styling, and occasion. Tie what you see to their written question. If images are outfit photos or mirror shots, comment on coordination and fit; if product shots, help with styling or sizing context.",
+      "Examine each image: if garments, comment on colors, patterns, fit/silhouette, styling, occasion; if furniture, room items, or generic products, describe what you see and tie it to the user's question (dimensions, style, use-case) without forcing fashion advice.",
     );
   }
 
@@ -242,7 +256,7 @@ export function buildChatPrompt(params: {
     system.push(params.productSummary);
     system.push("");
     system.push(
-      "Catalog rules: Use only the prices, ratings, review counts, sizes, colors, materials, fit labels, and measurement hints listed above for those products. Compare them to the user's profile (measurements, preferred fit, gender) when advising on size or fit. Mention products by title and brand; include the product URL when recommending one. Do not invent discounts, stock, or extra sizes. If catalog data is thin for an item, say so briefly.",
+      "Catalog rules: Use only the fields listed above (price, ratings, sizes, colors, materials, fit labels, etc.) as factual. For apparel, compare sizes/fit to the user's profile when relevant. For non-apparel, focus on title, price, materials, and URL — do not apply clothing fit or gender unless the item is wearable. Mention products by title and brand; include the product URL when recommending one. Do not invent discounts, stock, or extra variants. If catalog data is thin, say so briefly.",
     );
   }
 
@@ -250,11 +264,11 @@ export function buildChatPrompt(params: {
     system.push("");
     if (params.productSummary) {
       system.push(
-        "Suggested picks mode (user toggled ON): The reply must reference the live catalog items above by brand/title and explain which fit the user's ask and profile. Keep it natural, not a bullet list of URLs.",
+        "Suggested picks mode (user toggled ON): The reply must reference the live catalog items above by brand/title and explain which match the user's ask (and profile when the ask is clothing-related). Keep it natural, not a bullet list of URLs.",
       );
     } else {
       system.push(
-        "Suggested picks mode (user toggled ON): No catalog items were retrieved. Give solid styling advice and add one short sentence that product links could not be loaded right now.",
+        "Suggested picks mode (user toggled ON): No catalog items were retrieved. Give useful guidance for their ask (styling if apparel; practical buying tips if not) and add one short sentence that product links could not be loaded right now.",
       );
     }
   }

@@ -7,12 +7,14 @@ import { api } from "@/hooks/use-api";
 import { Button } from "@/components/ui/button";
 import { decodeHtmlEntities } from "@/lib/text/decode-html-entities";
 import { cn } from "@/lib/utils";
+import { normalizeChatMode, CHAT_MODE_TRYON } from "@/lib/chat/mode";
 
 type ChatSession = {
   id: string;
   title: string;
+  mode: string;
   createdAt: string;
-  messages?: { contentText: string | null; createdAt: string }[];
+  lastMessage: { contentText: string | null; createdAt: string } | null;
 };
 
 function SessionSkeleton() {
@@ -28,6 +30,16 @@ function SessionSkeleton() {
   );
 }
 
+function ModeBadge({ session }: { session: ChatSession }) {
+  const m = normalizeChatMode(session.mode);
+  const label = m === CHAT_MODE_TRYON ? "Try-on" : "Shop";
+  return (
+    <span className="mt-1 inline-block w-fit rounded-md bg-brand-blue/12 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-brand-blue">
+      {label}
+    </span>
+  );
+}
+
 export function ChatSplitLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
@@ -39,9 +51,11 @@ export function ChatSplitLayout({ children }: { children: React.ReactNode }) {
       ? pathname.slice("/chat/".length).split("/")[0] ?? null
       : null;
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError, error } = useQuery({
     queryKey: ["chatSessions"],
     queryFn: () => api<{ sessions: ChatSession[] }>("/api/chat/session"),
+    staleTime: 30_000,
+    refetchOnWindowFocus: true,
   });
 
   const createSession = useMutation({
@@ -61,7 +75,7 @@ export function ChatSplitLayout({ children }: { children: React.ReactNode }) {
     : undefined;
   const mobileTitle = activeSession
     ? decodeHtmlEntities(activeSession.title)
-    : "AI Chat";
+    : "FitCheck";
 
   useEffect(() => {
     /* eslint-disable react-hooks/set-state-in-effect -- close drawer on client navigation (incl. browser back) */
@@ -81,7 +95,7 @@ export function ChatSplitLayout({ children }: { children: React.ReactNode }) {
   const closeSidebar = useCallback(() => setMobileOpen(false), []);
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col">
+    <div className="flex min-h-[calc(100dvh-7rem)] flex-1 flex-col">
       {/* Mobile top bar */}
       <div className="flex shrink-0 items-center gap-2 border-b border-border-subtle bg-surface px-3 py-2.5 lg:hidden">
         <button
@@ -132,18 +146,15 @@ export function ChatSplitLayout({ children }: { children: React.ReactNode }) {
         aria-hidden={!mobileOpen}
       />
 
-      {/* ChatGPT-style: desktop sidebar is pinned left, full height of chat area (between header & footer) */}
       <div className="relative flex min-h-0 flex-1 flex-col lg:flex-row">
         <aside
           id="chat-history-sidebar"
           className={cn(
             "flex flex-col border-border-subtle bg-surface shadow-xl transition-transform duration-200 ease-out",
-            /* Mobile: full-height drawer */
             "fixed inset-y-0 left-0 z-[70] max-w-[320px] w-[min(100%,20rem)]",
             mobileOpen ? "translate-x-0" : "-translate-x-full",
-            /* Desktop: pinned left, viewport height below app header (ChatGPT-style) */
             "lg:translate-x-0 lg:shadow-none lg:border-r lg:border-border-subtle",
-            "lg:top-14 lg:bottom-0 lg:left-0 lg:z-30 lg:w-[min(25vw,20rem)]",
+            "lg:top-14 lg:bottom-0 lg:left-0 lg:z-[45] lg:w-[min(25vw,20rem)] lg:max-h-[calc(100dvh-3.5rem)]",
           )}
         >
           <div className="hidden items-center justify-between gap-2 border-b border-border-subtle px-3 py-3 lg:flex">
@@ -172,7 +183,13 @@ export function ChatSplitLayout({ children }: { children: React.ReactNode }) {
           <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-2 py-2">
             {isLoading && <SessionSkeleton />}
 
-            {!isLoading && sessions.length === 0 && (
+            {isError ? (
+              <p className="px-2 py-4 text-center text-xs text-brand-primary">
+                {error instanceof Error ? error.message : "Could not load chats."}
+              </p>
+            ) : null}
+
+            {!isLoading && !isError && sessions.length === 0 && (
               <p className="px-2 py-6 text-center text-sm text-text-muted">
                 No chats yet. Start a new conversation.
               </p>
@@ -180,7 +197,7 @@ export function ChatSplitLayout({ children }: { children: React.ReactNode }) {
 
             <ul className="flex flex-col gap-1.5">
               {sessions.map((s) => {
-                const lastMsg = s.messages?.[s.messages.length - 1];
+                const preview = s.lastMessage?.contentText;
                 const active = s.id === activeChatId;
                 return (
                   <li key={s.id}>
@@ -202,9 +219,10 @@ export function ChatSplitLayout({ children }: { children: React.ReactNode }) {
                       <span className="line-clamp-1 text-sm font-medium text-text-primary">
                         {decodeHtmlEntities(s.title)}
                       </span>
-                      {lastMsg?.contentText ? (
+                      <ModeBadge session={s} />
+                      {preview ? (
                         <span className="mt-0.5 line-clamp-2 text-xs text-text-muted">
-                          {decodeHtmlEntities(lastMsg.contentText)}
+                          {decodeHtmlEntities(preview)}
                         </span>
                       ) : null}
                       <span className="mt-1 text-[10px] text-text-muted/90">
@@ -223,7 +241,6 @@ export function ChatSplitLayout({ children }: { children: React.ReactNode }) {
           </div>
         </aside>
 
-        {/* Main column — reserve same width as fixed sidebar */}
         <div
           className={cn(
             "flex min-h-0 min-w-0 flex-1 flex-col bg-gradient-to-b from-brand-warm/[0.08] to-surface-muted",

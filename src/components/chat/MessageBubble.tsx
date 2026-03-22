@@ -1,11 +1,14 @@
 "use client";
-import { Fragment, ReactNode, useMemo } from "react";
+import { Fragment, ReactNode, useMemo, useState } from "react";
 import { decodeHtmlEntities } from "@/lib/text/decode-html-entities";
 import {
   formatProductTitleForDisplay,
   retailerLabelFromUrl,
 } from "@/lib/text/format-product-title";
 import { sanitizeAssistantMessageText } from "@/lib/text/sanitize-assistant-message";
+import { cn } from "@/lib/utils";
+import { ClickableImage, ImageLightbox } from "@/components/chat/ImageLightbox";
+import { profileMediaImageUrl } from "@/lib/media/profile-media-image-url";
 
 /** Strip trailing punctuation often glued to URLs in prose. */
 function stripUrlTrailingJunk(url: string): string {
@@ -19,7 +22,7 @@ type TextOrUrl = { kind: "text"; value: string } | { kind: "url"; value: string 
  */
 function tokenizeUrlsInText(text: string): TextOrUrl[] {
   const re =
-    /\(\s*url:\s*(https?:\/\/[^)\s]+)\s*\)|(https?:\/\/[^\s<>"'[\]]+)/gi;
+    /\(\s*url:\s*(https?:\/\/[^)\s]+)\s*\)|(https?:\/\/[^\s<>"'[\]]+)|(www\.[^\s<>"'[\]]+)/gi;
   const out: TextOrUrl[] = [];
   let last = 0;
   let m: RegExpExecArray | null;
@@ -27,8 +30,11 @@ function tokenizeUrlsInText(text: string): TextOrUrl[] {
     if (m.index > last) {
       out.push({ kind: "text", value: text.slice(last, m.index) });
     }
-    const raw = (m[1] || m[2] || "").trim();
-    out.push({ kind: "url", value: stripUrlTrailingJunk(raw) });
+    const raw = (m[1] || m[2] || m[3] || "").trim();
+    const normalized = raw.startsWith("www.")
+      ? `https://${raw}`
+      : raw;
+    out.push({ kind: "url", value: stripUrlTrailingJunk(normalized) });
     last = m.index + m[0].length;
   }
   if (last < text.length) {
@@ -63,15 +69,28 @@ function shortUrlChipLabel(url: string): string {
   }
 }
 
-function UrlChip({ href }: { href: string }) {
+function UrlChip({
+  href,
+  variant = "surface",
+}: {
+  href: string;
+  variant?: "surface" | "inverse";
+}) {
   const label = shortUrlChipLabel(href);
+  const inverse =
+    variant === "inverse"
+      ? "border-white/45 bg-white/14 text-white hover:border-white/60 hover:bg-white/22 [&_span.text-brand-blue]:text-white/90"
+      : "border-brand-warm/70 bg-brand-warm/15 text-text-primary hover:border-brand-accent hover:bg-brand-warm/25";
   return (
     <a
       href={href}
       target="_blank"
       rel="noreferrer noopener"
       title={href}
-      className="mx-0.5 inline-flex max-w-[11rem] items-baseline gap-0.5 overflow-hidden rounded-full border border-brand-warm/70 bg-brand-warm/15 px-2 py-0.5 align-baseline text-[11px] font-semibold leading-snug text-text-primary no-underline transition-colors hover:border-brand-accent hover:bg-brand-warm/25"
+      className={cn(
+        "mx-0.5 inline-flex max-w-[11rem] items-baseline gap-0.5 overflow-hidden rounded-full border px-2 py-0.5 align-baseline text-[11px] font-semibold leading-snug no-underline transition-colors",
+        inverse,
+      )}
     >
       <span className="truncate">{label}</span>
       <span aria-hidden className="shrink-0 text-brand-blue">
@@ -81,34 +100,60 @@ function UrlChip({ href }: { href: string }) {
   );
 }
 
-function renderBoldSegments(text: string, keyBase: string): ReactNode[] {
-  const parts = text.split(/(\*\*[^*]+\*\*)/g);
-  return parts
-    .filter(Boolean)
-    .map((part, idx) =>
-      part.startsWith("**") && part.endsWith("**") ? (
-        <strong key={`${keyBase}-b-${idx}`}>{part.slice(2, -2)}</strong>
-      ) : (
-        <Fragment key={`${keyBase}-t-${idx}`}>{part}</Fragment>
-      ),
-    );
+function renderBoldItalicSegments(text: string, keyBase: string): ReactNode[] {
+  const boldParts = text.split(/(\*\*[^*]+\*\*)/g);
+  return boldParts.filter(Boolean).flatMap((part, bi) => {
+    if (part.startsWith("**") && part.endsWith("**") && part.length > 4) {
+      return [
+        <strong key={`${keyBase}-b-${bi}`}>{part.slice(2, -2)}</strong>,
+      ];
+    }
+    const italicParts = part.split(/(\*[^*\n]+\*)/g);
+    return italicParts.filter(Boolean).map((seg, ii) => {
+      if (seg.startsWith("*") && seg.endsWith("*") && seg.length > 2) {
+        return (
+          <em key={`${keyBase}-i-${bi}-${ii}`}>{seg.slice(1, -1)}</em>
+        );
+      }
+      return <Fragment key={`${keyBase}-t-${bi}-${ii}`}>{seg}</Fragment>;
+    });
+  });
 }
 
-/** Bold + URL chips (assistant body). */
-function renderInlineRich(text: string, keyBase: string): ReactNode[] {
+/** Bold, italic, URL chips. */
+function renderMarkdownInline(
+  text: string,
+  keyBase: string,
+  chipVariant: "surface" | "inverse",
+): ReactNode[] {
   const normalized = decodeHtmlEntities(text);
   const tokens = tokenizeUrlsInText(normalized);
   const nodes: ReactNode[] = [];
   let i = 0;
   for (const tok of tokens) {
     if (tok.kind === "url") {
-      nodes.push(<UrlChip key={`${keyBase}-u-${i++}`} href={tok.value} />);
+      nodes.push(
+        <UrlChip
+          key={`${keyBase}-u-${i++}`}
+          href={tok.value}
+          variant={chipVariant}
+        />,
+      );
     } else {
-      nodes.push(...renderBoldSegments(tok.value, `${keyBase}-${i++}`));
+      nodes.push(
+        ...renderBoldItalicSegments(tok.value, `${keyBase}-m-${i++}`),
+      );
     }
   }
   return nodes;
 }
+
+type BubbleTextOpts = {
+  chipVariant: "surface" | "inverse";
+  paragraphClass: string;
+  listDiscClass: string;
+  listDecimalClass: string;
+};
 
 type ProductItem = {
   id: string;
@@ -117,7 +162,30 @@ type ProductItem = {
   price: string;
   imageUrl: string;
   sourceUrl: string;
+  rating?: string;
+  reviewCount?: string;
+  sizes?: string;
+  colors?: string;
+  material?: string;
+  fitType?: string;
+  category?: string;
+  genderTarget?: string;
 };
+
+export type TryOnBubblePayload = {
+  productImportId: string;
+  fit: Record<string, unknown>;
+  tryOnMediaIds: { front: string; back: string; zoomed: string };
+  runId: string;
+  /** Vision phase summary (markdown); also duplicated in message text */
+  analysisSummary?: string;
+};
+
+const TRY_ON_ORDER = [
+  { key: "front" as const, title: "Front" },
+  { key: "back" as const, title: "Back" },
+  { key: "zoomed" as const, title: "Detail" },
+];
 
 type MessageBubbleProps = {
   role: "user" | "assistant";
@@ -127,7 +195,12 @@ type MessageBubbleProps = {
   attachmentIds?: string[];
   actionButtons?: string[];
   products?: ProductItem[];
+  tryOn?: TryOnBubblePayload | null;
   onActionClick?: (action: string) => void;
+  /** Shop picks: start a try-on chat prefilled with this product */
+  onTryOnProduct?: (product: ProductItem) => void;
+  /** Disables Try on while a new session + image import is in flight */
+  productTryOnBusy?: boolean;
   thinking?: {
     mode: "complex" | "normal";
     retrievalEnabled: boolean;
@@ -144,27 +217,55 @@ type MessageBubbleProps = {
   showThinking?: boolean;
 };
 
-function renderAssistantText(text: string): ReactNode {
-  const cleaned = sanitizeAssistantMessageText(text);
+function renderFormattedBubbleText(
+  text: string,
+  opts: BubbleTextOpts,
+  sanitizeAssistantJson = true,
+): ReactNode {
+  const cleaned = sanitizeAssistantJson
+    ? sanitizeAssistantMessageText(text)
+    : text;
   const lines = cleaned.split("\n");
   const blocks: ReactNode[] = [];
+  type ListKind = "ul" | "ol";
+  let listKind: ListKind | null = null;
   let listItems: string[] = [];
 
   const flushList = () => {
-    if (listItems.length === 0) return;
+    if (listItems.length === 0) {
+      listKind = null;
+      return;
+    }
+    const k = listKind ?? "ul";
+    const ListTag = k === "ol" ? "ol" : "ul";
+    const listClass =
+      k === "ol" ? opts.listDecimalClass : opts.listDiscClass;
     blocks.push(
-      <ul
+      <ListTag
         key={`list-${blocks.length}`}
-        className="list-disc space-y-1.5 pl-5 text-sm leading-relaxed text-text-primary"
+        className={cn("space-y-1.5 pl-5 text-sm leading-relaxed", listClass)}
       >
         {listItems.map((item, idx) => (
           <li key={`${item}-${idx}`}>
-            {renderInlineRich(item, `li-${blocks.length}-${idx}`)}
+            {renderMarkdownInline(
+              item,
+              `li-${blocks.length}-${idx}`,
+              opts.chipVariant,
+            )}
           </li>
         ))}
-      </ul>,
+      </ListTag>,
     );
     listItems = [];
+    listKind = null;
+  };
+
+  const pushListItem = (kind: ListKind, item: string) => {
+    if (listKind !== kind) {
+      flushList();
+      listKind = kind;
+    }
+    listItems.push(item);
   };
 
   lines.forEach((raw: string, idx: number) => {
@@ -174,15 +275,21 @@ function renderAssistantText(text: string): ReactNode {
       return;
     }
 
+    const ol = line.match(/^\d+\.\s+(.+)$/);
+    if (ol) {
+      pushListItem("ol", ol[1]!.trim());
+      return;
+    }
+
     if (line.startsWith("* ") || line.startsWith("- ")) {
-      listItems.push(line.slice(2).trim());
+      pushListItem("ul", line.slice(2).trim());
       return;
     }
 
     flushList();
     blocks.push(
-      <p key={`p-${idx}`} className="text-sm leading-relaxed text-text-primary">
-        {renderInlineRich(line, `p-${idx}`)}
+      <p key={`p-${idx}`} className={opts.paragraphClass}>
+        {renderMarkdownInline(line, `p-${idx}`, opts.chipVariant)}
       </p>,
     );
   });
@@ -191,8 +298,8 @@ function renderAssistantText(text: string): ReactNode {
 
   if (blocks.length === 0) {
     return (
-      <p className="text-sm leading-relaxed text-text-primary">
-        {renderInlineRich(cleaned, "fallback")}
+      <p className={opts.paragraphClass}>
+        {renderMarkdownInline(cleaned, "fallback", opts.chipVariant)}
       </p>
     );
   }
@@ -212,6 +319,76 @@ function dedupeProducts(products: ProductItem[]): ProductItem[] {
   return out;
 }
 
+function TryOnResultBlock({
+  tryOn,
+  onOpenImage,
+}: {
+  tryOn: TryOnBubblePayload;
+  onOpenImage: (src: string, alt?: string) => void;
+}) {
+  return (
+    <div className="mt-4 border-t border-brand-warm/30 pt-3">
+      <p className="text-[10px] font-semibold uppercase tracking-wide text-brand-blue">
+        Generated try-on
+      </p>
+      <div className="mt-2 grid gap-2 sm:grid-cols-3">
+        {TRY_ON_ORDER.map(({ key, title }) => {
+          const id = tryOn.tryOnMediaIds[key];
+          if (!id) return null;
+          const src = profileMediaImageUrl(id, "tryOn");
+          const fullSrc = profileMediaImageUrl(id, "lightbox");
+          return (
+            <div key={key} className="space-y-1">
+              <p className="text-[10px] font-medium uppercase text-text-muted">
+                {title}
+              </p>
+              <ClickableImage
+                src={src}
+                lightboxSrc={fullSrc}
+                alt={`${title} try-on`}
+                onOpen={onOpenImage}
+                className="block w-full overflow-hidden rounded-xl ring-1 ring-border-subtle"
+                imgClassName="h-36 w-full object-cover transition-transform duration-300 hover:scale-[1.02] sm:h-40"
+              />
+            </div>
+          );
+        })}
+      </div>
+      <a
+        href={`/product/${tryOn.productImportId}`}
+        className="mt-3 inline-block text-xs font-medium text-brand-blue hover:text-brand-accent"
+      >
+        Open product page →
+      </a>
+    </div>
+  );
+}
+
+function ProductDetailRow({ label, value }: { label: string; value?: string }) {
+  const v = value?.trim();
+  if (!v) return null;
+  return (
+    <p className="text-[11px] leading-snug text-text-muted">
+      <span className="font-semibold text-text-primary/90">{label}</span>{" "}
+      {decodeHtmlEntities(v)}
+    </p>
+  );
+}
+
+const ASSISTANT_TEXT_OPTS: BubbleTextOpts = {
+  chipVariant: "surface",
+  paragraphClass: "text-sm leading-relaxed text-text-primary",
+  listDiscClass: "list-disc text-text-primary marker:text-brand-blue/55",
+  listDecimalClass: "list-decimal text-text-primary marker:text-brand-blue/55",
+};
+
+const USER_TEXT_OPTS: BubbleTextOpts = {
+  chipVariant: "inverse",
+  paragraphClass: "text-sm leading-relaxed text-white",
+  listDiscClass: "list-disc text-white marker:text-white/55",
+  listDecimalClass: "list-decimal text-white marker:text-white/55",
+};
+
 export function MessageBubble({
   role,
   text,
@@ -219,11 +396,20 @@ export function MessageBubble({
   attachmentIds,
   actionButtons,
   products,
+  tryOn,
   onActionClick,
+  onTryOnProduct,
+  productTryOnBusy,
   thinking,
   showThinking = false,
 }: MessageBubbleProps) {
   const isUser = role === "user";
+  const [lightbox, setLightbox] = useState<{ src: string; alt: string } | null>(
+    null,
+  );
+  const openLightbox = (src: string, alt?: string) => {
+    setLightbox({ src, alt: alt ?? "" });
+  };
 
   const uniqueProducts = useMemo(
     () => (products?.length ? dedupeProducts(products) : []),
@@ -234,6 +420,11 @@ export function MessageBubble({
     <div
       className={`flex ${isUser ? "justify-end" : "justify-start"} animate-in fade-in duration-200`}
     >
+      <ImageLightbox
+        src={lightbox?.src ?? null}
+        alt={lightbox?.alt}
+        onClose={() => setLightbox(null)}
+      />
       <div
         className={`max-w-[82%] rounded-2xl px-4 py-3 shadow-sm ${isUser
           ? "rounded-br-md bg-brand-blue text-white"
@@ -244,22 +435,33 @@ export function MessageBubble({
           <div className="space-y-2">
             {attachmentIds && attachmentIds.length > 0 ? (
               <div className="flex flex-wrap gap-1.5">
-                {attachmentIds.map((aid) => (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img
-                    key={aid}
-                    src={`/api/profile/media/${aid}/view`}
-                    alt=""
-                    className="h-20 max-w-[7rem] rounded-lg object-cover ring-1 ring-white/20"
-                  />
-                ))}
+                {attachmentIds.map((aid) => {
+                  const src = profileMediaImageUrl(aid, "chatChip");
+                  const fullSrc = profileMediaImageUrl(aid, "lightbox");
+                  return (
+                    <ClickableImage
+                      key={aid}
+                      src={src}
+                      lightboxSrc={fullSrc}
+                      alt="Attached photo"
+                      onOpen={openLightbox}
+                      className="block overflow-hidden rounded-lg ring-1 ring-white/25"
+                      imgClassName="h-20 max-w-[7rem] object-cover"
+                    />
+                  );
+                })}
               </div>
             ) : null}
-            <p className="whitespace-pre-wrap text-sm leading-relaxed">{text}</p>
+            {text.trim()
+              ? renderFormattedBubbleText(text, USER_TEXT_OPTS, false)
+              : null}
           </div>
         ) : (
-          renderAssistantText(text)
+          renderFormattedBubbleText(text, ASSISTANT_TEXT_OPTS)
         )}
+        {!isUser && tryOn ? (
+          <TryOnResultBlock tryOn={tryOn} onOpenImage={openLightbox} />
+        ) : null}
         {!isUser && showThinking && thinking && (
           <details className="mt-3 rounded-xl border border-brand-warm/40 bg-brand-warm/10 p-2.5">
             <summary className="cursor-pointer text-xs font-medium text-brand-blue">
@@ -281,7 +483,7 @@ export function MessageBubble({
               </p>
               <p>Products merged: {thinking.finalProducts}</p>
               {thinking.suggestedPicksRequested ? (
-                <p>Suggested picks: forced ON (user toggle)</p>
+                <p>Suggested picks: catalog retrieval enabled</p>
               ) : null}
               <p>Query: {decodeHtmlEntities(thinking.retrievalQuery)}</p>
               <p>Confidence: {(thinking.confidence * 100).toFixed(0)}%</p>
@@ -303,68 +505,91 @@ export function MessageBubble({
           </div>
         )}
         {!isUser && uniqueProducts.length > 0 && (
-          <div className="mt-4 border-t border-brand-warm/30 pt-3">
-            <div className="mb-2.5 flex items-center gap-2">
+          <div className="mt-4 space-y-3 border-t border-brand-warm/30 pt-4">
+            <div className="flex items-center gap-2">
               <span className="h-px flex-1 bg-gradient-to-r from-transparent via-brand-warm/60 to-transparent" />
-              <span className="text-[11px] font-semibold uppercase tracking-[0.12em] text-text-muted">
-                Suggested picks
+              <span className="text-[10px] font-semibold uppercase tracking-[0.14em] text-brand-blue">
+                Product details (from site)
               </span>
               <span className="h-px flex-1 bg-gradient-to-r from-transparent via-brand-warm/60 to-transparent" />
             </div>
-            <div className="-mx-0.5 flex gap-3 overflow-x-auto pb-1 pt-0.5 [scrollbar-width:thin]">
+            <div className="space-y-4">
               {uniqueProducts.map((product) => {
                 const retailer = retailerLabelFromUrl(product.sourceUrl);
                 const displayTitle = formatProductTitleForDisplay(product.title);
+                const ratingLine =
+                  [product.rating, product.reviewCount]
+                    .filter(Boolean)
+                    .join(product.rating && product.reviewCount ? " · " : "") ||
+                  undefined;
 
                 return (
-                  <a
+                  <div
                     key={product.sourceUrl}
-                    href={product.sourceUrl}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="group w-[11.25rem] shrink-0 overflow-hidden rounded-[14px] border border-border-subtle bg-surface shadow-[0_1px_3px_rgba(0,0,0,0.06)] ring-1 ring-border-subtle transition-[box-shadow,transform] hover:-translate-y-0.5 hover:shadow-md hover:ring-brand-warm/50"
+                    className="flex gap-3 rounded-[14px] border border-border-subtle bg-gradient-to-b from-surface-muted/80 to-surface p-3 shadow-sm ring-1 ring-border-subtle/80"
                   >
-                    <div className="relative aspect-[4/3] overflow-hidden bg-gradient-to-b from-surface-muted to-surface">
-                      {!product.imageUrl ? (
-                        <div className="flex h-full items-center justify-center text-[11px] text-text-muted">
-                          No image
-                        </div>
-                      ) : (
-                        // eslint-disable-next-line @next/next/no-img-element
-                        <img
+                    <div className="relative shrink-0">
+                      {product.imageUrl ? (
+                        <ClickableImage
                           src={product.imageUrl}
-                          alt=""
-                          className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-[1.03]"
+                          alt={decodeHtmlEntities(displayTitle)}
+                          onOpen={openLightbox}
+                          className="block h-28 w-28 overflow-hidden rounded-xl ring-1 ring-border-subtle sm:h-32 sm:w-32"
+                          imgClassName="h-full w-full object-cover"
                         />
+                      ) : (
+                        <div className="flex h-28 w-28 items-center justify-center rounded-xl border border-dashed border-border-subtle bg-surface text-[10px] text-text-muted sm:h-32 sm:w-32">
+                          No photo
+                        </div>
                       )}
-                      {retailer && (
-                        <span className="absolute left-2 top-2 rounded-md bg-black/55 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-white backdrop-blur-sm">
+                      {retailer ? (
+                        <span className="absolute left-1.5 top-1.5 rounded-md bg-black/60 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-white backdrop-blur-sm">
                           {retailer}
                         </span>
-                      )}
+                      ) : null}
                     </div>
-                    <div className="space-y-1 px-2.5 pb-2.5 pt-2">
+                    <div className="min-w-0 flex-1 space-y-1.5">
                       <p
-                        className="line-clamp-2 min-h-[2.5rem] text-[13px] font-semibold leading-snug text-text-primary"
+                        className="text-[13px] font-semibold leading-snug text-text-primary"
                         title={decodeHtmlEntities(product.title)}
                       >
                         {displayTitle}
                       </p>
-                      {product.brand && (
-                        <p className="truncate text-[11px] text-text-muted">
-                          {decodeHtmlEntities(product.brand)}
-                        </p>
-                      )}
-                      {product.price && (
-                        <p className="text-[13px] font-semibold tabular-nums text-brand-accent">
-                          {decodeHtmlEntities(product.price)}
-                        </p>
-                      )}
-                      <p className="text-[11px] font-medium text-brand-blue group-hover:text-brand-accent">
-                        View on {retailer || "store"} →
-                      </p>
+                      <ProductDetailRow label="Brand" value={product.brand} />
+                      <ProductDetailRow label="Price" value={product.price} />
+                      <ProductDetailRow label="Rating" value={ratingLine} />
+                      <ProductDetailRow label="Sizes" value={product.sizes} />
+                      <ProductDetailRow label="Colors" value={product.colors} />
+                      <ProductDetailRow label="Material" value={product.material} />
+                      <ProductDetailRow label="Fit" value={product.fitType} />
+                      <ProductDetailRow label="Category" value={product.category} />
+                      <ProductDetailRow
+                        label="Section"
+                        value={product.genderTarget}
+                      />
+                      <div className="flex flex-wrap items-center gap-2 pt-1">
+                        <UrlChip href={product.sourceUrl} variant="surface" />
+                        <a
+                          href={product.sourceUrl}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="text-[11px] font-medium text-brand-blue hover:text-brand-accent"
+                        >
+                          Open product page ↗
+                        </a>
+                      </div>
+                      {onTryOnProduct ? (
+                        <button
+                          type="button"
+                          disabled={productTryOnBusy}
+                          onClick={() => onTryOnProduct(product)}
+                          className="mt-1 w-full max-w-[14rem] rounded-lg border border-brand-warm/50 bg-brand-warm/15 py-2 text-center text-[11px] font-semibold text-text-primary transition-colors hover:bg-brand-warm/25 disabled:cursor-not-allowed disabled:opacity-60"
+                        >
+                          {productTryOnBusy ? "Preparing…" : "Try on"}
+                        </button>
+                      ) : null}
                     </div>
-                  </a>
+                  </div>
                 );
               })}
             </div>

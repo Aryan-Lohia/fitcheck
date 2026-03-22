@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { profileMediaImageUrl } from "@/lib/media/profile-media-image-url";
 
 interface MediaItem {
   id: string;
@@ -119,7 +120,7 @@ export function MediaGrid({ items, onDelete }: MediaGridProps) {
         {items.map((item) => {
           const isSelected = selected.has(item.id);
           const showImageThumb = isDisplayableImageMime(item.mimeType, item.fileName);
-          const thumbSrc = `/api/profile/media/${item.id}/view`;
+          const thumbSrc = profileMediaImageUrl(item.id, "grid");
           return (
             <div
               key={item.id}
@@ -216,7 +217,7 @@ export function MediaGrid({ items, onDelete }: MediaGridProps) {
               /* eslint-disable-next-line @next/next/no-img-element */
               <img
                 key={previewId}
-                src={`/api/profile/media/${previewId}/view`}
+                src={profileMediaImageUrl(previewId, "preview")}
                 alt={items.find((i) => i.id === previewId)?.fileName ?? ""}
                 className={`max-h-[70vh] w-full object-contain transition-opacity duration-150 ${previewLoadState === "loaded" ? "opacity-100" : "opacity-0"}`}
                 onLoad={() => setPreviewLoadState("loaded")}

@@ -33,11 +33,29 @@ enum BookingStatus {
   draft
   requested
   accepted
+  awaiting_payment
+  payment_submitted
+  payment_confirmed
   meeting_link_sent
   in_progress
   completed
   cancelled
   refunded
+}
+
+enum BookingMessageRole {
+  USER
+  FREELANCER
+  SYSTEM
+}
+
+enum BookingMessageKind {
+  text
+  quote
+  payment_proof
+  profile_share
+  photos_share
+  system
 }
 
 enum PaymentStatus {
@@ -68,21 +86,25 @@ model User {
   storageUsage  StorageUsageDaily[]
   trials        Trial[]
   auditActions  AuditLog[]         @relation("auditActor")
+  bookingMessages BookingMessage[]
 }
 
 model UserProfile {
-  id                 String   @id @default(cuid())
-  userId             String   @unique
-  gender             String?
-  skinTone           String?
-  preferredStyle     Json?
-  preferredFit       String?
-  preferredColors    Json?
-  measurementsJson   Json?
-  profileCompletion  Int      @default(0)
-  createdAt          DateTime @default(now())
-  updatedAt          DateTime @updatedAt
-  user               User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id                             String    @id @default(cuid())
+  userId                         String    @unique
+  gender                         String?
+  skinTone                       String?
+  preferredStyle                 Json?
+  preferredFit                   String?
+  preferredColors                Json?
+  measurementsJson               Json?
+  fashionProfileJson             Json?
+  profileCompletion              Int       @default(0)
+  onboardingProfileCompletedAt   DateTime?
+  onboardingFeaturesSeenAt       DateTime?
+  createdAt                      DateTime  @default(now())
+  updatedAt                      DateTime  @updatedAt
+  user                           User      @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
 model UserMedia {
@@ -97,6 +119,7 @@ model UserMedia {
   createdAt  DateTime @default(now())
   deletedAt  DateTime?
   user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  paymentProofForBooking BookingRequest?
 
   @@index([userId, isDeleted])
 }
@@ -131,7 +154,7 @@ model ChatSession {
   id         String   @id @default(cuid())
   userId      String
   title       String
-  mode        String  @default("fashion")
+  mode        String  @default("shop")
   createdAt   DateTime @default(now())
   user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   messages    ChatMessage[]
@@ -158,6 +181,8 @@ model FreelancerProfile {
   verificationStatus   FreelancerVerificationStatus @default(draft)
   verificationNotes    String?
   approvedAt           DateTime?
+  upiQrS3Key           String?
+  upiVpa               String?
   user                 User @relation(fields: [userId], references: [id], onDelete: Cascade)
   bookingRequests      BookingRequest[] @relation("freelancerBookings")
   bookingSlots         BookingSlot[]
@@ -174,12 +199,35 @@ model BookingRequest {
   durationMinutes Int @default(30)
   meetingLink     String?
   paymentStatus   PaymentStatus @default(pending)
+  quoteAmountMinor Int?
+  quoteCurrency    String        @default("INR")
+  quotedAt         DateTime?
+  quoteNotes       String?
+  paymentProofMediaId String?   @unique
+  paymentConfirmedAt DateTime?
   createdAt       DateTime @default(now())
   acceptedAt      DateTime?
   completedAt     DateTime?
   user            User @relation("userBookings", fields: [userId], references: [id], onDelete: Cascade)
   freelancer      FreelancerProfile? @relation("freelancerBookings", fields: [freelancerId], references: [id])
+  paymentProofMedia UserMedia? @relation(fields: [paymentProofMediaId], references: [id], onDelete: SetNull)
   payments        Payment[]
+  messages        BookingMessage[]
+}
+
+model BookingMessage {
+  id           String             @id @default(cuid())
+  bookingId    String
+  authorUserId String?
+  role         BookingMessageRole
+  kind         BookingMessageKind
+  body         String             @default("")
+  metadataJson Json?
+  createdAt    DateTime           @default(now())
+  booking      BookingRequest     @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  author       User?              @relation(fields: [authorUserId], references: [id], onDelete: SetNull)
+
+  @@index([bookingId, createdAt])
 }
 
 model BookingSlot {

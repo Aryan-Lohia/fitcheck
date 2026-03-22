@@ -3,9 +3,10 @@ import { createHash } from "crypto";
 import { requireAuth } from "@/lib/auth/rbac";
 import { prisma } from "@/lib/prisma/client";
 import { buildWizardProfileContext, buildChatPrompt } from "@/lib/ai/prompts";
+import { normalizeChatMode } from "@/lib/chat/mode";
 import { getGeminiChatModel, getGeminiModel } from "@/lib/ai/client";
 import { fetchRemoteImageAsBase64 } from "@/lib/ai/remote-image-base64";
-import { generatePresignedDownloadUrl } from "@/lib/s3/presign";
+import { getUserMediaAsGeminiInline } from "@/lib/media/user-media-image-base64";
 import {
   trimHistory,
   estimateTokens,
@@ -14,6 +15,8 @@ import {
 import { buildCacheKey, getCache, setCache } from "@/lib/ai/cache";
 import { logAiUsage } from "@/lib/usage/meter";
 import { ok, fail } from "@/lib/http";
+import { maybeSetSessionTitleAfterFirstTurn } from "@/lib/chat/session-title";
+import { parseTryOnReferenceMediaIds } from "@/lib/profile/try-on-reference-media";
 import { logger } from "@/lib/logger";
 import { decodeHtmlEntities } from "@/lib/text/decode-html-entities";
 import { fetchPageHtml } from "@/lib/scraper/fetcher";
@@ -23,7 +26,11 @@ import {
   enrichAjioListingSummariesWithImagesFromHtml,
   extractAjioListingSummariesFromSearchHtml,
 } from "@/lib/scraper/ajio-plp-extract";
-import { fetchMyntraGatewayProductSummaries } from "@/lib/scraper/retailer-catalog/myntra-gateway";
+import {
+  fetchMyntraGatewayProductSummaries,
+  type MyntraListingSummary,
+} from "@/lib/scraper/retailer-catalog/myntra-gateway";
+import { fetchMeeshoSearchSummaries } from "@/lib/scraper/retailer-catalog/meesho-search";
 import { detectDomainType } from "@/lib/scraper/router";
 import { normalizeProduct } from "@/lib/scraper/normalizer";
 import { extract as genericExtract } from "@/lib/scraper/adapters/genericAdapter";
@@ -250,6 +257,9 @@ function enrichRetrievalQuery(
 ): string {
   let q = rawQuery.trim().replace(/\s+/g, " ");
   if (!q) return q;
+  if (looksNonApparelCatalogQuery(q)) {
+    return q.slice(0, 220);
+  }
   const lower = q.toLowerCase();
 
   const genderMatch = wizardProfileContext.match(/Gender:\s*([^.]+)\./i);
@@ -296,12 +306,113 @@ function listingQueryVariants(primary: string): string[] {
   return [...new Set(variants)].slice(0, 4);
 }
 
+function looksNonApparelCatalogQuery(q: string): boolean {
+  const lower = q.toLowerCase();
+  const hints = [
+    "furniture",
+    "closet",
+    "closets",
+    "wardrobe",
+    "wardrobes",
+    "almirah",
+    "almira",
+    "cabinet",
+    "cabinets",
+    "bookshelf",
+    "cupboard",
+    "drawer",
+    "rack",
+    "sofa",
+    "chair",
+    "table",
+    "desk",
+    "bed",
+    "mattress",
+    "shelf",
+    "planter",
+    "garden",
+    "tool",
+    "drill",
+    "wrench",
+    "kitchen",
+    "decor",
+    "lamp",
+    "storage",
+    "organizer",
+    "electronic",
+    "gadget",
+    "appliance",
+    "charger",
+    "cable",
+    "book",
+    "toy",
+    "pet",
+    "home",
+    "hardware",
+    "planters",
+    "office",
+    "stationery",
+    "bathroom",
+    "curtain",
+    "mirror",
+    "flooring",
+    "paint",
+  ];
+  return hints.some((h) => lower.includes(h));
+}
+
 async function ensureBroadFallbackListings(
   products: ProductCard[],
   pushCard: (c: ProductCard) => void,
   minTarget: number,
+  retrievalQuery: string,
 ): Promise<void> {
   if (products.length >= minTarget) return;
+
+  const nonApparel = looksNonApparelCatalogQuery(retrievalQuery);
+
+  const tryMeeshoSeeds = async (seeds: string[], limit: number) => {
+    for (const seed of seeds) {
+      if (products.length >= minTarget) break;
+      if (seed.length < 2) continue;
+      try {
+        const batch = await fetchMeeshoSearchSummaries(seed, {
+          limit,
+          maxPage: 1,
+        });
+        for (const s of batch) {
+          const normalizedUrl = canonicalizeProductUrl(s.sourceUrl);
+          pushCard({
+            id: createHash("sha1").update(normalizedUrl).digest("hex"),
+            title: decodeHtmlEntities(s.title),
+            brand: decodeHtmlEntities(s.brand),
+            price: decodeHtmlEntities(s.price),
+            imageUrl: s.imageUrl,
+            sourceUrl: normalizedUrl,
+            retailer: "meesho",
+            parserConfidence: 0.48,
+            category: s.category,
+          });
+        }
+      } catch {
+        /* ignore */
+      }
+    }
+  };
+
+  if (nonApparel) {
+    const seeds = new Set<string>();
+    const rq = retrievalQuery.trim();
+    if (rq.length >= 2) seeds.add(rq.slice(0, 120));
+    for (const t of tokenizeQuery(retrievalQuery).slice(0, 6)) {
+      if (t.length >= 3) seeds.add(t);
+    }
+    seeds.add("wardrobe closet storage");
+    seeds.add("home kitchen storage");
+    await tryMeeshoSeeds([...seeds].slice(0, 8), 16);
+    return;
+  }
+
   const slugs = [
     "tshirts",
     "men-tshirts",
@@ -359,6 +470,18 @@ async function ensureBroadFallbackListings(
       }
     }
   }
+
+  if (products.length < minTarget) {
+    const seeds = new Set<string>();
+    const rq = retrievalQuery.trim();
+    if (rq.length >= 2) seeds.add(rq.slice(0, 120));
+    for (const t of tokenizeQuery(retrievalQuery).slice(0, 3)) {
+      if (t.length >= 3) seeds.add(t);
+    }
+    seeds.add("home kitchen storage");
+    seeds.add("garden planters pots");
+    await tryMeeshoSeeds([...seeds].slice(0, 5), 14);
+  }
 }
 
 async function decideWhetherToRetrieveProducts(params: {
@@ -368,13 +491,13 @@ async function decideWhetherToRetrieveProducts(params: {
 }): Promise<RetrievalDecision> {
   const latestTurns = params.history.slice(-4);
   const decisionPrompt = [
-    "You are a routing assistant for a fashion chat with live catalog search (Myntra, Ajio, Meesho).",
+    "You are a routing assistant for a shopping chat with live catalog search (Myntra, Ajio, Meesho — including general merchandise on Meesho: home, kitchen, tools, garden, etc.).",
     "Decide if product retrieval is needed for the user's latest message.",
     "Use retrieval when the user wants product ideas, links, shopping options, what to buy, or store-specific picks.",
     "Skip retrieval for pure theory, small talk, profile wizard setup only, or non-shopping topics.",
     "",
     "When useProductRetrieval is true, set `query` to a SHORT web-search phrase (3–12 words), not a full sentence:",
-    "- Include garment type, color, style, occasion keywords as appropriate.",
+    "- Include product type, color, style, room, use-case keywords as appropriate (apparel or non-apparel).",
     "- Include gender or fit words if they matter for the request.",
     "- No question marks, no \"I want\", no filler — keyword-style (e.g. \"men slim fit black casual shirt\").",
     "",
@@ -497,6 +620,13 @@ function isLikelyProductUrl(url: string): boolean {
     }
   }
   if (lower.includes("meesho.com")) {
+    try {
+      const path = new URL(url).pathname;
+      // Category / listing PLPs, not PDPs
+      if (/\/pl\//i.test(path)) return false;
+    } catch {
+      return false;
+    }
     return (
       lower.includes("/product/") ||
       /meesho\.com\/[^/?#]+\/p\/[a-z0-9]+/i.test(lower)
@@ -508,6 +638,7 @@ function isLikelyProductUrl(url: string): boolean {
 function orderPdpLinksForBalancedFetch(
   urls: string[],
   terms: string[],
+  prioritizeMeeshoFirst = false,
 ): string[] {
   const seen = new Set<string>();
   const unique = urls.filter((u) => {
@@ -535,12 +666,18 @@ function orderPdpLinksForBalancedFetch(
     if (!ordered.includes(u)) ordered.push(u);
   };
 
-  // Interleave: prioritize at least early Myntra + Ajio slots for parallel 2+2 ingestion.
+  // Interleave: default favors fashion retailers; Meesho-first for home/general queries.
   const maxLen = Math.max(myntra.length, ajio.length, meesho.length);
   for (let i = 0; i < maxLen; i++) {
-    if (myntra[i]) push(myntra[i]!);
-    if (ajio[i]) push(ajio[i]!);
-    if (meesho[i]) push(meesho[i]!);
+    if (prioritizeMeeshoFirst) {
+      if (meesho[i]) push(meesho[i]!);
+      if (ajio[i]) push(ajio[i]!);
+      if (myntra[i]) push(myntra[i]!);
+    } else {
+      if (myntra[i]) push(myntra[i]!);
+      if (ajio[i]) push(ajio[i]!);
+      if (meesho[i]) push(meesho[i]!);
+    }
   }
   for (const u of unique) push(u);
 
@@ -580,10 +717,17 @@ function extractLiveSearchLinks(html: string): string[] {
   return [...strict, ...fallbackPdps].slice(0, 50);
 }
 
-async function liveSearchProductLinks(query: string): Promise<{
+async function liveSearchProductLinks(
+  query: string,
+  opts?: {
+    sites?: readonly (typeof LIVE_SEARCH_SITES)[number][];
+    prioritizeMeeshoFirst?: boolean;
+  },
+): Promise<{
   links: string[];
   ajioSearchHtml: string | null;
 }> {
+  const sites = opts?.sites ?? [...LIVE_SEARCH_SITES];
   const linkSet = new Set<string>();
   const terms = tokenizeQuery(query);
   let ajioSearchHtml: string | null = null;
@@ -599,7 +743,7 @@ async function liveSearchProductLinks(query: string): Promise<{
   };
 
   await Promise.all(
-    LIVE_SEARCH_SITES.map(async (site) => {
+    sites.map(async (site) => {
       const searchUrl = `https://duckduckgo.com/html/?q=${encodeURIComponent(
         `site:${site} ${query}`,
       )}`;
@@ -653,7 +797,11 @@ async function liveSearchProductLinks(query: string): Promise<{
   const pool =
     positive.length > 0 ? positive : scored.map((x) => x.url);
   return {
-    links: orderPdpLinksForBalancedFetch(pool, terms).slice(0, MAX_PDP_FETCH_ATTEMPTS),
+    links: orderPdpLinksForBalancedFetch(
+      pool,
+      terms,
+      opts?.prioritizeMeeshoFirst === true,
+    ).slice(0, MAX_PDP_FETCH_ATTEMPTS),
     ajioSearchHtml,
   };
 }
@@ -742,15 +890,24 @@ async function tryIngestSinglePdpLink(
 const MAX_RAW_CATALOG_ROWS = 48;
 
 async function ingestLiveSearchProducts(query: string): Promise<ProductCard[]> {
+  const nonApparel = looksNonApparelCatalogQuery(query);
   const terms = tokenizeQuery(query);
   const listingLimit = 40;
   const rawVariants = listingQueryVariants(query);
+  const qTrim = query.trim();
   const variants =
-    rawVariants.length > 0 ? rawVariants : ["tshirts", "shirts", "jeans"];
-  const primaryListingQ = variants[0] ?? "tshirts";
+    rawVariants.length > 0
+      ? rawVariants
+      : nonApparel
+        ? [qTrim.slice(0, 96) || "home storage"]
+        : ["tshirts", "shirts", "jeans"];
+  const primaryListingQ =
+    variants[0] ?? (nonApparel ? qTrim || "home storage" : "tshirts");
+  const liveSites = nonApparel ? (["meesho.com"] as const) : LIVE_SEARCH_SITES;
 
   logger.debug(`${CATALOG_DBG} ingestLiveSearchProducts start`, {
     queryPreview: query.slice(0, 120),
+    nonApparel,
     variantCount: variants.length,
     variantsPreview: variants.slice(0, 5),
     primaryListingQ,
@@ -758,19 +915,41 @@ async function ingestLiveSearchProducts(query: string): Promise<ProductCard[]> {
     termCount: terms.length,
   });
 
-  const myntraBatches = await Promise.all(
-    variants.map((qv) =>
-      fetchMyntraGatewayProductSummaries(qv, { limit: listingLimit }),
+  const meeshoQuerySeeds = [...new Set([primaryListingQ, ...variants.slice(0, 2)])].slice(0, 3);
+
+  const [myntraBatches, meeshoApiBatches, searchPack] = await Promise.all([
+    nonApparel
+      ? Promise.resolve(variants.map((): MyntraListingSummary[] => []))
+      : Promise.all(
+        variants.map((qv) =>
+          fetchMyntraGatewayProductSummaries(qv, { limit: listingLimit }),
+        ),
+      ),
+    Promise.all(
+      meeshoQuerySeeds.map((qv) =>
+        fetchMeeshoSearchSummaries(qv, {
+          limit: Math.min(listingLimit, 28),
+          maxPage: 2,
+        }),
+      ),
     ),
-  );
+    liveSearchProductLinks(primaryListingQ, {
+      sites: [...liveSites],
+      prioritizeMeeshoFirst: nonApparel,
+    }),
+  ]);
   const myntraSummaries = myntraBatches.flat();
+  const meeshoSummariesFromApi = meeshoApiBatches.flat();
   logger.debug(`${CATALOG_DBG} myntra gateway`, {
     batchCount: myntraBatches.length,
     rowCounts: myntraBatches.map((b) => b.length),
     myntraTotal: myntraSummaries.length,
   });
+  logger.debug(`${CATALOG_DBG} meesho search API`, {
+    seedCount: meeshoQuerySeeds.length,
+    rowTotal: meeshoSummariesFromApi.length,
+  });
 
-  const searchPack = await liveSearchProductLinks(primaryListingQ);
   const { links: linkPool, ajioSearchHtml } = searchPack;
 
   logger.debug(`${CATALOG_DBG} liveSearchProductLinks`, {
@@ -813,34 +992,63 @@ async function ingestLiveSearchProducts(query: string): Promise<ProductCard[]> {
     products.push(card);
   };
 
-  for (const s of myntraSummaries) {
-    const normalizedUrl = canonicalizeProductUrl(s.sourceUrl);
-    pushCard({
-      id: createHash("sha1").update(normalizedUrl).digest("hex"),
-      title: decodeHtmlEntities(s.title),
-      brand: decodeHtmlEntities(s.brand),
-      price: decodeHtmlEntities(s.price),
-      imageUrl: s.imageUrl,
-      sourceUrl: normalizedUrl,
-      category: s.category,
-      genderTarget: s.genderTarget,
-      retailer: "myntra",
-      parserConfidence: 0.52,
-    });
-  }
+  const pushMyntraListings = () => {
+    for (const s of myntraSummaries) {
+      const normalizedUrl = canonicalizeProductUrl(s.sourceUrl);
+      pushCard({
+        id: createHash("sha1").update(normalizedUrl).digest("hex"),
+        title: decodeHtmlEntities(s.title),
+        brand: decodeHtmlEntities(s.brand),
+        price: decodeHtmlEntities(s.price),
+        imageUrl: s.imageUrl,
+        sourceUrl: normalizedUrl,
+        category: s.category,
+        genderTarget: s.genderTarget,
+        retailer: "myntra",
+        parserConfidence: 0.52,
+      });
+    }
+  };
+  const pushMeeshoListings = () => {
+    for (const s of meeshoSummariesFromApi) {
+      const normalizedUrl = canonicalizeProductUrl(s.sourceUrl);
+      pushCard({
+        id: createHash("sha1").update(normalizedUrl).digest("hex"),
+        title: decodeHtmlEntities(s.title),
+        brand: decodeHtmlEntities(s.brand),
+        price: decodeHtmlEntities(s.price),
+        imageUrl: s.imageUrl,
+        sourceUrl: normalizedUrl,
+        category: s.category,
+        retailer: "meesho",
+        parserConfidence: 0.54,
+      });
+    }
+  };
+  const pushAjioListings = () => {
+    for (const s of ajioSummaries) {
+      const normalizedUrl = canonicalizeProductUrl(s.sourceUrl);
+      pushCard({
+        id: createHash("sha1").update(normalizedUrl).digest("hex"),
+        title: decodeHtmlEntities(s.name),
+        brand: decodeHtmlEntities(s.brand),
+        price: decodeHtmlEntities(s.price),
+        imageUrl: s.imageUrl,
+        sourceUrl: normalizedUrl,
+        retailer: "ajio",
+        parserConfidence: 0.52,
+      });
+    }
+  };
 
-  for (const s of ajioSummaries) {
-    const normalizedUrl = canonicalizeProductUrl(s.sourceUrl);
-    pushCard({
-      id: createHash("sha1").update(normalizedUrl).digest("hex"),
-      title: decodeHtmlEntities(s.name),
-      brand: decodeHtmlEntities(s.brand),
-      price: decodeHtmlEntities(s.price),
-      imageUrl: s.imageUrl,
-      sourceUrl: normalizedUrl,
-      retailer: "ajio",
-      parserConfidence: 0.52,
-    });
+  if (nonApparel) {
+    pushMeeshoListings();
+    pushAjioListings();
+    pushMyntraListings();
+  } else {
+    pushMyntraListings();
+    pushMeeshoListings();
+    pushAjioListings();
   }
 
   let pdpCandidates = orderPdpLinksForBalancedFetch(
@@ -848,6 +1056,7 @@ async function ingestLiveSearchProducts(query: string): Promise<ProductCard[]> {
       !seenProductUrls.has(canonicalizeProductUrl(u).toLowerCase()),
     ),
     terms,
+    nonApparel,
   );
 
   logger.debug(`${CATALOG_DBG} after listing cards (pre-PDP)`, {
@@ -856,7 +1065,7 @@ async function ingestLiveSearchProducts(query: string): Promise<ProductCard[]> {
   });
 
   const hasMeesho = products.some((p) => siteKeyFromUrl(p.sourceUrl) === "meesho");
-  if (!hasMeesho) {
+  if (!hasMeesho || nonApparel) {
     const meesho = pdpCandidates.filter((u: string) => siteKeyFromUrl(u) === "meesho");
     const rest = pdpCandidates.filter((u: string) => siteKeyFromUrl(u) !== "meesho");
     pdpCandidates = [...meesho, ...rest];
@@ -898,6 +1107,7 @@ async function ingestLiveSearchProducts(query: string): Promise<ProductCard[]> {
     products,
     pushCard,
     MIN_LISTING_CARDS_BEFORE_RANK,
+    query,
   );
 
   logger.debug(`${CATALOG_DBG} after ensureBroadFallbackListings`, {
@@ -954,9 +1164,12 @@ async function ingestLiveSearchProducts(query: string): Promise<ProductCard[]> {
     selected.push(c);
   };
 
+  const sitePickOrder = nonApparel
+    ? (["meesho", "ajio", "myntra"] as const)
+    : (["myntra", "ajio", "meesho"] as const);
   const maxRounds = 8;
   for (let r = 0; r < maxRounds && selected.length < MAX_LIVE_LINKS; r++) {
-    for (const site of ["myntra", "ajio", "meesho"] as const) {
+    for (const site of sitePickOrder) {
       const row = bySite[site][r];
       if (row) take(row);
       if (selected.length >= MAX_LIVE_LINKS) break;
@@ -1040,7 +1253,6 @@ export async function POST(req: NextRequest) {
     message?: string;
     attachmentIds?: string[];
     complex?: boolean;
-    /** Client toggle: always run catalog retrieval for this message */
     suggestedPicks?: boolean;
   };
   try {
@@ -1049,9 +1261,10 @@ export async function POST(req: NextRequest) {
     return fail("Invalid request body", 400);
   }
 
-  const { sessionId, message, attachmentIds, complex, suggestedPicks } = body;
+  const { sessionId, message, attachmentIds, complex } = body;
   const useComplex = complex === true;
-  const forceSuggestedPicks = suggestedPicks === true;
+  /** Shop chat always engages catalog retrieval (replaces client “Suggested picks” toggle). */
+  const forceSuggestedPicks = true;
   const userMessageText = typeof message === "string" ? message.trim() : "";
   const attachmentIdList = Array.isArray(attachmentIds)
     ? [
@@ -1072,12 +1285,16 @@ export async function POST(req: NextRequest) {
 
   const chatSession = await prisma.chatSession.findUnique({
     where: { id: sessionId },
-    select: { userId: true },
+    select: { userId: true, mode: true },
   });
 
   if (!chatSession || chatSession.userId !== session.userId) {
     return fail("Chat session not found", 404);
   }
+
+  const messageCountBeforeTurn = await prisma.chatMessage.count({
+    where: { sessionId },
+  });
 
   type VisionPart = { inlineData: { mimeType: string; data: string } };
   let attachmentImageParts: VisionPart[] = [];
@@ -1098,11 +1315,13 @@ export async function POST(req: NextRequest) {
     const byId = new Map(mediaRows.map((m) => [m.id, m]));
     const ordered = attachmentIdList.map((id) => byId.get(id)!);
     try {
-      const urls = await Promise.all(
-        ordered.map((m) => generatePresignedDownloadUrl(m.s3Key)),
-      );
       const blobs = await Promise.all(
-        urls.map((u) => fetchRemoteImageAsBase64(u)),
+        ordered.map((m) =>
+          getUserMediaAsGeminiInline({
+            s3Key: m.s3Key,
+            mimeTypeFromDb: m.mimeType,
+          }),
+        ),
       );
       attachmentImageParts = blobs.map((b) => ({
         inlineData: { mimeType: b.mimeType, data: b.base64 },
@@ -1144,15 +1363,21 @@ export async function POST(req: NextRequest) {
     }),
   ]);
 
+  const refIds = parseTryOnReferenceMediaIds(userProfile?.fashionProfileJson);
+  const hasLegacyFront = photoRows.some((p) =>
+    p.fileName.toLowerCase().startsWith("front-"),
+  );
+  const hasLegacyBack = photoRows.some((p) =>
+    p.fileName.toLowerCase().startsWith("back-"),
+  );
   const wizardProfileContext = buildWizardProfileContext(
     userProfile as Record<string, unknown> | null,
     {
-      frontPhotoUploaded: photoRows.some((p) =>
-        p.fileName.toLowerCase().startsWith("front-"),
-      ),
-      backPhotoUploaded: photoRows.some((p) =>
-        p.fileName.toLowerCase().startsWith("back-"),
-      ),
+      primaryReferencePhoto: refIds.length >= 1 || hasLegacyFront,
+      secondaryReferencePhoto:
+        refIds.length >= 2 ||
+        (refIds.length === 0 && hasLegacyFront && hasLegacyBack) ||
+        (refIds.length === 1 && hasLegacyBack),
     },
   );
 
@@ -1235,12 +1460,17 @@ export async function POST(req: NextRequest) {
     }
     if (liveProducts.length === 0) {
       try {
-        const fallbackQ = messageForRetrieval || "men shirt";
+        const fb = messageForRetrieval.trim();
+        const nonA = looksNonApparelCatalogQuery(fb);
+        const fallbackQ =
+          fb.length >= 2 ? fb : nonA ? "wardrobe closet storage" : "men casual shirt";
         logger.debug(`${CATALOG_DBG} ingest fallback starting`, {
           fallbackQueryPreview: fallbackQ.slice(0, 120),
         });
         liveProducts = await withTimeout(
-          ingestLiveSearchProducts(fallbackQ),
+          ingestLiveSearchProducts(
+            enrichRetrievalQuery(fallbackQ, wizardProfileContext),
+          ),
           Math.min(LIVE_RAG_TIMEOUT_MS, 28_000),
           "Live product retrieval fallback",
         );
@@ -1305,6 +1535,7 @@ export async function POST(req: NextRequest) {
     message: promptUserMessage,
     suggestedPicksRequested: forceSuggestedPicks,
     attachedImageCount: attachmentImageParts.length,
+    chatMode: normalizeChatMode(chatSession.mode),
   });
 
   const historyFingerprint = createHash("sha256")
@@ -1421,6 +1652,22 @@ export async function POST(req: NextRequest) {
         }),
       ),
     },
+  });
+
+  await prisma.chatSession.update({
+    where: { id: sessionId },
+    data: {
+      mode: chatSession.mode === "tryon" ? "tryon" : "shop",
+    },
+  });
+
+  await maybeSetSessionTitleAfterFirstTurn({
+    sessionId,
+    userId: session.userId,
+    messageCountBeforeThisTurn: messageCountBeforeTurn,
+    titleHint:
+      userMessageText ||
+      (attachmentIdList.length > 0 ? "Outfit photo question" : "Chat"),
   });
 
   if (tokensIn > 0 || tokensOut > 0) {

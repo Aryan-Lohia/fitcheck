@@ -1,8 +1,8 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #000000;
+  --background: #0b0d12;
+  --foreground: #f0f2f7;
   /* Fallbacks when Next font variables are unset */
   --font-geist-sans: ui-sans-serif, system-ui, "Segoe UI", Roboto, "Helvetica Neue", Arial,
     sans-serif;
@@ -10,17 +10,17 @@
 }
 
 @theme inline {
-  /* Brand palette — only these hues + black/white neutrals */
-  --color-brand-primary: #c00707;
-  --color-brand-accent: #ff4400;
+  /* Brand palette — vivid accents on dark surfaces */
+  --color-brand-primary: #e85a5a;
+  --color-brand-accent: #ff5c26;
   --color-brand-warm: #ffb33f;
-  --color-brand-blue: #134e8e;
-  --color-surface: #ffffff;
-  --color-surface-muted: #fff9f2;
-  --color-border-subtle: color-mix(in srgb, #000000 10%, #ffffff);
-  --color-text-primary: #000000;
-  --color-text-muted: color-mix(in srgb, #000000 52%, #ffffff);
-  --color-ring-focus: #134e8e;
+  --color-brand-blue: #5b9cf5;
+  --color-surface: #12151c;
+  --color-surface-muted: #0b0d12;
+  --color-border-subtle: color-mix(in srgb, #ffffff 14%, transparent);
+  --color-text-primary: #f0f2f7;
+  --color-text-muted: #a8b0bf;
+  --color-ring-focus: #5b9cf5;
 
   --color-background: var(--background);
   --color-foreground: var(--foreground);

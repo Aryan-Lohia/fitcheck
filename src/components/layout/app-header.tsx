@@ -13,7 +13,7 @@ export function AppHeader() {
     <header className="sticky top-0 z-40 border-b border-border-subtle bg-surface/95 shadow-sm backdrop-blur-md">
       <div className="mx-auto flex max-w-7xl items-center justify-between gap-3 px-4 py-3 md:gap-4 md:px-6">
         <Link
-          href="/dashboard"
+          href="/chat"
           className="shrink-0 text-lg font-bold tracking-tight text-brand-accent"
         >
           FitCheck

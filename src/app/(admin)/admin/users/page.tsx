@@ -83,7 +83,7 @@ export default function AdminUsersPage() {
                 {filtered?.map((u) => (
                   <tr key={u.id} className="hover:bg-surface-muted">
                     <td className="px-4 py-3 font-medium">{u.name}</td>
-                    <td className="px-4 py-3 text-black/65">{u.email}</td>
+                    <td className="px-4 py-3 text-text-muted">{u.email}</td>
                     <td className="px-4 py-3">
                       <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${roleBadge[u.role]}`}>
                         {u.role}

@@ -11,7 +11,7 @@ function getGeminiClient(): GoogleGenerativeAI {
 export function getGeminiModel(complex = false) {
   const client = getGeminiClient();
   return client.getGenerativeModel({
-    model: complex ? "gemini-2.5-flash" : "gemini-2.5-flash-lite",
+    model: complex ? "gemini-3-flash-preview" : "gemini-2.5-flash-lite",
   });
 }
 
@@ -20,12 +20,12 @@ export function getGeminiChatModel(opts: { complex: boolean; withImages: boolean
   const client = getGeminiClient();
   const useFull = opts.complex || opts.withImages;
   return client.getGenerativeModel({
-    model: useFull ? "gemini-2.5-flash" : "gemini-2.5-flash-lite",
+    model: useFull ? "gemini-3-flash-preview" : "gemini-2.5-flash-lite",
   });
 }
 
 export function getGeminiImageModel() {
   const client = getGeminiClient();
-  const model = process.env.GEMINI_IMAGE_MODEL || "gemini-2.5-flash-image";
+  const model = process.env.GEMINI_IMAGE_MODEL || "gemini-3-pro-image-preview";
   return client.getGenerativeModel({ model });
 }
